@@ -82,10 +82,27 @@ class Brain:
 # https://gafferongames.com/post/fix_your_timestep/
 # https://gameprogrammingpatterns.com/game-loop.html
 
+# In those articles it is recommended to interpolete between two frames. For this application,
+# I don't think it is worth the trouble. The interpolation solves two problems.
+#   1. If the fps is greater than the tps, then the movement is stuttered. The interpolation
+#      helps to make smoother. Therefore, this might be useful for the frontend altough, again,
+#      it is not the trouble
+#
+#   2. Because the updating and "rendering" happen at different rates, there will usually be
+#      the same number of updates between two renders (assume tps > fps ie. 60 and 50). However
+#      the state we should draw is not the one which is indicated by the simulation but
+#      the one of the few ms which separate the last update and the render. Aditionally,
+#      these remains accumulate which have the effect of performing more simulations between
+#      renders so it gives the impression that the simulation has run faster. This problem
+#      can be avoided with lerp.
+
 class GameLoopThread(threading.Thread):
 
-    def __init__(self, brain_cls, fps=10, tps=20, brain_kwargs={}):
+    def __init__(self, brain_cls, fps=20, tps=20, brain_kwargs={}):
         super().__init__()
+
+        self.fps = fps
+        self.tps = tps
 
         self._brain_cls = brain_cls
         self._brain_kwargs = brain_kwargs
@@ -114,7 +131,7 @@ class GameLoopThread(threading.Thread):
         self._current_loop_quit.set()
         self._continue.clear()
     
-    def new_loop(self, round):
+    def new_loop(self, round: Round):
         """ Creates a new game loop in this thread for the given round. 
         A new instance of the brain will be created.
         You have to call this method in order for a game loop to run. Otherwise, the thread
@@ -150,12 +167,14 @@ class GameLoopThread(threading.Thread):
             current_time = new_time
 
             accumulator += frame_time
+            # In the article, the frame time is upper bounded (0.25ms). I think
+            # this is to avoid 
             while accumulator >= self._delta and not self._current_loop_quit.is_set():
                 self._current_brain.update(self._delta)
                 accumulator -= self._delta
         
             if not self._current_loop_quit.is_set():
-                self._current_brain.render(self._hans_client)
+                self._current_brain.render(self._hans_client, accumulator / self._delta)
             
             remaining_frame_time = self._max_frame_time - (time.monotonic() - current_time)
             if remaining_frame_time > 0:
