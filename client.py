@@ -1,17 +1,22 @@
+from __future__ import annotations
+
 from typing import Optional
 import json
 from PIL import Image
 from io import BytesIO
 from dataclasses import dataclass
-from typing import List
+from typing import List, TYPE_CHECKING
 import threading
 import time
+from datetime import datetime
 
 import requests
 import paho.mqtt.client as mqtt
 
 from exceptions import CannotStartRoundException
 
+if TYPE_CHECKING:
+    import numpy as np
 
 @dataclass
 class Question:
@@ -185,7 +190,7 @@ class GameLoopThread(threading.Thread):
 
 class HansClient:
 
-    def __init__(self, name: str, game_loop, session_id: int=1):
+    def __init__(self, name: str, game_loop: GameLoopThread, session_id: int=1):
         self.name = name
 
         self._host = ""
@@ -196,6 +201,9 @@ class HansClient:
 
         self._session_id = str(session_id)
         self._session_topic = f"swarm/session/{self._session_id}"
+
+        self.control_topic = ""
+        self.update_topic = ""
 
         self._session = None
 
@@ -237,8 +245,8 @@ class HansClient:
             raise ValueError(f"There does not exist session with id {self._session_id}")
 
         self.client_id = str(req.json()["id"])
-        self._control_topic = f"{self._session_topic}/control/{self.client_id}"
-        print(f"Control topic: {self._control_topic}")
+        self.control_topic = f"{self._session_topic}/control/{self.client_id}"
+        self.update_topic = f"{self._session_topic}/updates/{self.client_id}"
 
         self._mqttc.connect(self._host, self._broker_port)
     
@@ -247,8 +255,16 @@ class HansClient:
         self._game_loop.start()
         self._mqttc.loop_forever(*args, **kwargs)
     
+    def send_position(self, position: np.array):
+        # TODO: this needs a refactoring. HansClient is starting to have a lot of responsabilities
+        # TODO: check if the date format is the one expected by the hans platform
+        self._publish(self.update_topic, {
+            "data": {"position": list(position)},
+            "timeStamp": datetime.now().isoformat()
+        })
+    
     def _send_ready_msg(self):
-        self._mqttc.publish(self._control_topic, payload=json.dumps({
+        self._mqttc.publish(self.control_topic, payload=json.dumps({
             "type": "ready",
             "participant": self.client_id,
             "session": self._session_id
@@ -260,7 +276,7 @@ class HansClient:
 
         # This must be sent so that the client's name appears to the admin in the text area
         # where all connected clients are shown
-        self._publish(self._control_topic, {
+        self._publish(self.control_topic, {
             "type": "join",
             "participant": self.client_id,
             "session": self._session_id
@@ -290,7 +306,7 @@ class HansClient:
             print(f"Changed question to {self._current_question}")
 
             # I think this is to inform that everything went right
-            self._publish(self._control_topic, {
+            self._publish(self.control_topic, {
                 "type": "ready",
                 "participant": self.client_id,
                 "session": self._session_id
@@ -303,7 +319,7 @@ class HansClient:
         elif payload["type"] == "stop":
             self._game_loop.stop()
     
-    def _publish(self, topic, payload):
+    def _publish(self, topic: str, payload):
         self._mqttc.publish(topic, payload=json.dumps(payload))
 
     def __enter__(self):
