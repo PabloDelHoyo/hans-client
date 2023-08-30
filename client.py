@@ -59,10 +59,16 @@ class Question:
 
 
 @dataclass
+class Participant:
+    name: str
+    id: int
+
+
+@dataclass
 class Round:
     question: Question
     duration: int
-    participants: List[str]
+    participants: List[Participant]
 
 
 class HansClient:
@@ -70,7 +76,7 @@ class HansClient:
         self._platform = platform
         self.pcodec = pcodec
 
-    def send_position(self, position: np.array, encode=True):
+    def send_position(self, position: np.ndarray, encode=True):
         # TODO: check if the date format is the one expected by the hans platform
         if encode:
             position = self.pcodec.encode(position)
@@ -85,16 +91,14 @@ class HansClient:
 
 
 class HansPlatform:
-    def __init__(
-        self, client_name: str, game_loop: LoopThread, session_id: int = 1
-    ):
+    def __init__(self, client_name: str, game_loop: LoopThread, session_id: int = 1):
         self.client_name = client_name
+        self.client_id = None
 
         self._host = ""
         self._api_base = ""
         self._port = 3000
         self._broker_port = 9001
-        self.client_id = None
 
         self._session_id = str(session_id)
         self._session_topic = f"swarm/session/{self._session_id}"
@@ -176,7 +180,6 @@ class HansPlatform:
 
     def _on_message(self, client, userdata, msg):
         payload = json.loads(msg.payload)
-        print(f"Recieved from {msg.topic}: {payload}")
 
         # Only control messages contain the "type" value. If in the future, that does not
         # hold, it is very important to change it here
@@ -187,7 +190,8 @@ class HansPlatform:
         else:
             # Right now, update messsages are sent when the users are responding. If it were
             # not the case, we would have to keep track of the state in which the client is
-            pass
+            participant_id = int(msg.topic.split("/")[-1])
+            self._loop_thread.on_changed_position(participant_id, payload["data"])
 
     def _handle_control_msgs(self, payload):
         if payload["type"] == "setup":
@@ -216,19 +220,17 @@ class HansPlatform:
             hans_client = HansClient(
                 self, PositionCodec(num_answers=len(new_round.question.answers))
             )
-            self._loop_thread.new_loop(
-                new_round, hans_client
-            )
+            self._loop_thread.new_loop(new_round, hans_client)
         elif payload["type"] == "stop":
             self._loop_thread.stop()
 
     def _all_participants(self) -> List[str]:
         req = self._session.post(
             f"{self._api_base}/session/{self._session_id}/allParticipants",
-            json={"user": "admin", "pass": "admin"}
+            json={"user": "admin", "pass": "admin"},
         )
 
-        return [user["username"] for user in req.json()]
+        return [Participant(user["username"], user["id"]) for user in req.json()]
 
     def _publish(self, topic: str, payload):
         self._mqttc.publish(topic, payload=json.dumps(payload))
@@ -239,75 +241,3 @@ class HansPlatform:
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self._session is not None:
             self._session.close()
-
-
-def test_game_loop():
-    import threading
-
-    class TestLoop(Loop):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-
-            self._current_time = time.monotonic()
-            self.count = 1
-
-        def update(self, delta):
-            print(f"From update printing round: {round}")
-
-        def render(self, hans_client, sync_ratio):
-            self.count += 1
-
-            new_time = time.monotonic()
-            diff = new_time - self._current_time
-            if diff > 0:
-                print(f"FPS: {1 / diff} - Count: {self.count}")
-            self._current_time = new_time
-
-    loop_thread = LoopThread(TestLoop)
-
-    threading.Timer(5, lambda: loop_thread.new_loop(Round(None, 1))).start()
-    threading.Timer(10, lambda: loop_thread.stop()).start()
-    threading.Timer(20, lambda: loop_thread.new_loop(Round(None, 2))).start()
-    threading.Timer(30, lambda: loop_thread.quit()).start()
-
-    loop_thread.start()
-
-
-def test_client():
-    import random
-    import numpy as np
-    from loop import LoopThread, Loop
-
-    class Oscillator(Loop):
-        def __init__(self, period, radius, **kwargs):
-            super().__init__(**kwargs)
-
-            self.period = period
-            self.radius = radius
-            self.angle = 0
-
-            print(f"Los participantes son {self.round.participants}")
-
-        def update(self, delta):
-            self.angle += (2 * np.pi) / self.period * delta
-
-        def render(self, client: HansClient, sync_ratio: float):
-            print(f"Sync ratio: {sync_ratio}")
-            position = self.radius * np.sin(self.angle)
-            client.send_position(np.array([0, position]))
-
-    game_loop = LoopThread(
-        Oscillator, fps=20, tps=20, brain_kwargs={"period": 2, "radius": 100}
-    )
-
-    print(f"FPS: {game_loop.fps}, TPS: {game_loop.tps}")
-    platform = HansPlatform(f"Bot ({random.random()})", game_loop)
-
-    print(f"Name: {platform.client_name}")
-    platform.connect("localhost")
-
-    platform.listen()
-
-
-if __name__ == "__main__":
-    test_client()
