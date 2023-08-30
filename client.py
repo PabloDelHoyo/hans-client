@@ -81,6 +81,7 @@ class Question:
 class Round:
     question: Question
     duration: int
+    participants: List[str]
 
 
 class HansClient:
@@ -229,15 +230,24 @@ class HansPlatform:
             if self._current_question is None:
                 raise CannotStartRoundException("The question has not been set")
 
-            new_round = Round(self._current_question, payload["duration"])
+            participants = self._all_participants()
+            new_round = Round(self._current_question, payload["duration"], participants)
             hans_client = HansClient(
                 self, PositionCodec(num_answers=len(new_round.question.answers))
             )
             self._game_loop.new_loop(
-                Round(self._current_question, payload["duration"]), hans_client
+                new_round, hans_client
             )
         elif payload["type"] == "stop":
             self._game_loop.stop()
+
+    def _all_participants(self) -> List[str]:
+        req = self._session.post(
+            f"{self._api_base}/session/{self._session_id}/allParticipants",
+            json={"user": "admin", "pass": "admin"}
+        )
+
+        return [user["username"] for user in req.json()]
 
     def _publish(self, topic: str, payload):
         self._mqttc.publish(topic, payload=json.dumps(payload))
