@@ -17,26 +17,7 @@ from position_codec import PositionCodec
 
 if TYPE_CHECKING:
     import numpy as np
-    from game_loop import GameLoopThread
-
-
-class Brain:
-    def __init__(self, round):
-        self.round = round
-
-    def render(self, hans_client: HansClient):
-        """This is where all code in which message packets are sent must go.
-        Right now, those packets only contain position information.
-
-        The rate at which this method is called may vary. That will depend on the work
-        done by self.udpate()
-        """
-
-    def update(self, delta: float, sync_ratio: float):
-        """All code related to the calculation of the next position.
-
-        The rate which this method is called is guaranteed to be constant so delta is fixed.
-        """
+    from loop import Loop, LoopThread
 
 
 @dataclass
@@ -105,7 +86,7 @@ class HansClient:
 
 class HansPlatform:
     def __init__(
-        self, client_name: str, game_loop: GameLoopThread, session_id: int = 1
+        self, client_name: str, game_loop: LoopThread, session_id: int = 1
     ):
         self.client_name = client_name
 
@@ -127,7 +108,7 @@ class HansPlatform:
         self._mqttc.on_connect = self._on_connect
         self._mqttc.on_message = self._on_message
 
-        self._game_loop = game_loop
+        self._loop_thread = game_loop
 
         self._current_question = None
 
@@ -163,7 +144,7 @@ class HansPlatform:
 
     def listen(self, *args, **kwargs):
         """Listen to incoming MQTT requests and start the game loop thread"""
-        self._game_loop.start()
+        self._loop_thread.start()
         self._mqttc.loop_forever(*args, **kwargs)
 
     def _send_ready_msg(self):
@@ -235,11 +216,11 @@ class HansPlatform:
             hans_client = HansClient(
                 self, PositionCodec(num_answers=len(new_round.question.answers))
             )
-            self._game_loop.new_loop(
+            self._loop_thread.new_loop(
                 new_round, hans_client
             )
         elif payload["type"] == "stop":
-            self._game_loop.stop()
+            self._loop_thread.stop()
 
     def _all_participants(self) -> List[str]:
         req = self._session.post(
@@ -258,3 +239,75 @@ class HansPlatform:
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self._session is not None:
             self._session.close()
+
+
+def test_game_loop():
+    import threading
+
+    class TestLoop(Loop):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+
+            self._current_time = time.monotonic()
+            self.count = 1
+
+        def update(self, delta):
+            print(f"From update printing round: {round}")
+
+        def render(self, hans_client, sync_ratio):
+            self.count += 1
+
+            new_time = time.monotonic()
+            diff = new_time - self._current_time
+            if diff > 0:
+                print(f"FPS: {1 / diff} - Count: {self.count}")
+            self._current_time = new_time
+
+    loop_thread = LoopThread(TestLoop)
+
+    threading.Timer(5, lambda: loop_thread.new_loop(Round(None, 1))).start()
+    threading.Timer(10, lambda: loop_thread.stop()).start()
+    threading.Timer(20, lambda: loop_thread.new_loop(Round(None, 2))).start()
+    threading.Timer(30, lambda: loop_thread.quit()).start()
+
+    loop_thread.start()
+
+
+def test_client():
+    import random
+    import numpy as np
+    from loop import LoopThread, Loop
+
+    class Oscillator(Loop):
+        def __init__(self, period, radius, **kwargs):
+            super().__init__(**kwargs)
+
+            self.period = period
+            self.radius = radius
+            self.angle = 0
+
+            print(f"Los participantes son {self.round.participants}")
+
+        def update(self, delta):
+            self.angle += (2 * np.pi) / self.period * delta
+
+        def render(self, client: HansClient, sync_ratio: float):
+            print(f"Sync ratio: {sync_ratio}")
+            position = self.radius * np.sin(self.angle)
+            client.send_position(np.array([0, position]))
+
+    game_loop = LoopThread(
+        Oscillator, fps=20, tps=20, brain_kwargs={"period": 2, "radius": 100}
+    )
+
+    print(f"FPS: {game_loop.fps}, TPS: {game_loop.tps}")
+    platform = HansPlatform(f"Bot ({random.random()})", game_loop)
+
+    print(f"Name: {platform.client_name}")
+    platform.connect("localhost")
+
+    platform.listen()
+
+
+if __name__ == "__main__":
+    test_client()

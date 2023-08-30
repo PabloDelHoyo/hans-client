@@ -24,8 +24,25 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from client import HansClient, Round
 
+class Loop:
+    def __init__(self, round):
+        self.round = round
 
-class GameLoopThread(threading.Thread):
+    def render(self, hans_client: HansClient):
+        """This is where all code in which message packets are sent must go.
+        Right now, those packets only contain position information.
+
+        The rate at which this method is called may vary. That will depend on the work
+        done by self.udpate()
+        """
+
+    def update(self, delta: float, sync_ratio: float):
+        """All code related to the calculation of the next position.
+
+        The rate which this method is called is guaranteed to be constant so delta is fixed.
+        """
+
+class LoopThread(threading.Thread):
     def __init__(self, brain_cls, fps=20, tps=20, brain_kwargs={}):
         super().__init__()
 
