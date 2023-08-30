@@ -20,14 +20,14 @@ class PositionCodec:
             radius * np.stack((np.cos(angles), np.sin(angles)), axis=1)
         )
 
-    def distance_to_answers(self, point: np.array) -> np.array:
+    def distance_to_answers(self, point: np.ndarray) -> np.ndarray:
         """Calculates the distance of point to every answer.
         Point must be a (2, ) shape numpy array"""
 
         diff_sq = (self.answer_points - point) ** 2
         return np.sqrt(diff_sq.sum(axis=1))
 
-    def encode(self, point: np.array) -> np.array:
+    def encode(self, point: np.ndarray) -> np.ndarray:
         """Transforms the (2, ) numpy array into another numpy array in the format
         required by the hans platform"""
 
@@ -40,7 +40,7 @@ class PositionCodec:
 
         return encoded_position
 
-    def decode(self, encoded_position: np.array) -> np.array:
+    def decode(self, encoded_position: np.array) -> np.ndarray:
         """Decodes the format sent by the hans platform"""
 
         return self.answer_points.T @ encoded_position
