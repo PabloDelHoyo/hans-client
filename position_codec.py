@@ -40,7 +40,7 @@ class PositionCodec:
 
         return encoded_position
 
-    def decode(self, encoded_position: np.array) -> np.ndarray:
+    def decode(self, encoded_position: np.ndarray) -> np.ndarray:
         """Decodes the format sent by the hans platform"""
 
         return self.answer_points.T @ encoded_position

@@ -6,7 +6,6 @@ from PIL import Image
 from io import BytesIO
 from dataclasses import dataclass
 from typing import List, TYPE_CHECKING
-import time
 from datetime import datetime
 
 import requests
@@ -89,6 +88,10 @@ class HansClient:
             },
         )
 
+    @property
+    def id(self):
+        return self._platform.client_id
+
 
 class HansPlatform:
     def __init__(self, client_name: str, game_loop: LoopThread, session_id: int = 1):
@@ -106,7 +109,7 @@ class HansPlatform:
         self.control_topic = ""
         self.update_topic = ""
 
-        self._session = None
+        self._session: Optional[requests.Session] = None
 
         self._mqttc = mqtt.Client(transport="websockets", clean_session=True)
         self._mqttc.on_connect = self._on_connect
@@ -114,7 +117,9 @@ class HansPlatform:
 
         self._loop_thread = game_loop
 
-        self._current_question = None
+        # TODO: the logic for setting a question is intermingled in this class. This
+        # should be refactored
+        self._current_question: Optional[Question] = None
 
     def connect(
         self, host: str, port: Optional[int] = None, broker_port: Optional[int] = None
@@ -239,5 +244,6 @@ class HansPlatform:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        # TODO: stop the loop thread and disconnect from mqtt
         if self._session is not None:
             self._session.close()
