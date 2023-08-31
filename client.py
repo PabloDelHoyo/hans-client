@@ -5,7 +5,7 @@ import json
 from PIL import Image
 from io import BytesIO
 from dataclasses import dataclass
-from typing import List, TYPE_CHECKING
+from typing import TYPE_CHECKING
 from datetime import datetime
 
 import requests
@@ -30,7 +30,7 @@ class Question:
     id: int
     collection_id: str
     prompt: str
-    answers: List[str]
+    answers: list[str]
     img: Image
 
     @classmethod
@@ -73,7 +73,7 @@ class Participant:
 class Round:
     question: Question
     duration: int
-    participants: List[Participant]
+    participants: list[Participant]
 
 
 class HansClient:
@@ -243,7 +243,7 @@ class HansPlatform:
         elif payload["type"] == "stop":
             self._loop_thread.stop()
 
-    def _all_participants(self) -> List[str]:
+    def _all_participants(self) -> list[str]:
         req = self._session.post(
             f"{self._api_base}/session/{self._session_id}/allParticipants",
             json={"user": "admin", "pass": "admin"},
