@@ -20,67 +20,17 @@ from __future__ import annotations
 import threading
 import time
 import numpy as np
-from typing import Dict, List, Optional, Callable, TYPE_CHECKING
+from typing import Optional, Callable, TYPE_CHECKING
+
+from state import State
 
 if TYPE_CHECKING:
     from sys import OptExcInfo
 
-    from position_codec import PositionCodec
+    from state import StateSnapshot
     from client import HansClient, Round
 
 
-class State:
-    def __init__(self, state: Dict[int, np.ndarray], client_id: int):
-        self._state = state
-        self._client_id = client_id
-
-    @property
-    def all_positions(self) -> Dict[int, np.ndarray]:
-        return self._state
-
-    @property
-    def other_participants_positions(self) -> Dict[int, np.ndarray]:
-        return {
-            participant_id: position
-            for participant_id, position in self._state.items()
-            if participant_id != self._client_id
-        }
-
-
-# TODO: change this name for a better one
-class StateHandler:
-    """Class to update the global state given individual delta updates. In a real
-    game, we would poll the I/O system to get the latest network messages"""
-
-    def __init__(
-        self, pcodec: PositionCodec, participant_ids: List[int], client_id: int
-    ):
-        self._client_id = client_id
-        self._pcodec = pcodec
-
-        # All participants start at the postition (0, 0)
-        self._state = {
-            participant_id: np.zeros(2) for participant_id in participant_ids
-        }
-
-        # We don't want the state to be updated when it is being copy in "get_state"
-        self._lock = threading.Lock()
-
-    def update_state(self, participant_id: int, position: np.ndarray):
-        with self._lock:
-            self._state[participant_id] = self._pcodec.decode(position)
-
-    def get_state(self) -> State:
-        """Copy the current state. This is safe to call when there are multiple threads"""
-
-        with self._lock:
-            return State(
-                {
-                    participant_id: position.copy()
-                    for participant_id, position in self._state.items()
-                },
-                self._client_id,
-            )
 
 
 class Loop:
@@ -95,7 +45,7 @@ class Loop:
         done by self.udpate()
         """
 
-    def update(self, state: State, delta: float):
+    def update(self, snapshot: StateSnapshot, delta: float):
         """All code related to the calculation of the next position.
 
         The rate which this method is called is guaranteed to be constant so delta is fixed.
@@ -127,7 +77,7 @@ class LoopThread(threading.Thread):
         # These will be set when a new loop is called
         self._current_loop: Optional[Loop] = None
 
-        self._current_state_handler: Optional[StateHandler] = None
+        self._current_state: Optional[State] = None
 
         # Called when an exception happens
         self._exc_handler: Optional[Callable[[None], None]] = None
@@ -154,7 +104,7 @@ class LoopThread(threading.Thread):
         self._current_hans_client = hans_client
 
         participant_ids = [participant.id for participant in round.participants]
-        self._current_state_handler = StateHandler(
+        self._current_state= State(
             hans_client.pcodec, participant_ids, hans_client.id
         )
 
@@ -194,8 +144,8 @@ class LoopThread(threading.Thread):
             # this is to avoid "the spiral of hell" introduced in the article
 
             while accumulator >= self._delta and not self._current_loop_quit.is_set():
-                state = self._current_state_handler.get_state()
-                self._current_loop.update(state, self._delta)
+                snapshot = self._current_state.get_snapshot()
+                self._current_loop.update(snapshot, self._delta)
                 accumulator -= self._delta
 
             if not self._current_loop_quit.is_set():
@@ -222,7 +172,7 @@ class LoopThread(threading.Thread):
             return
 
         position = np.array(data["position"])
-        self._current_state_handler.update_state(participant_id, position)
+        self._current_state.update(participant_id, position)
 
     def add_exc_handler(self, exc_handler: Callable[[None], None]):
         """Sets the handler that will be called when there is an exception in the loop"""
