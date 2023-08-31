@@ -15,8 +15,14 @@ from exceptions import CannotStartRoundException
 from position_codec import PositionCodec
 
 if TYPE_CHECKING:
+    from sys import ExcInfo
     import numpy as np
     from loop import Loop, LoopThread
+
+
+def raise_from_exc_info(exc_info: ExcInfo):
+    _, value, traceback = exc_info
+    raise value.with_traceback(traceback)
 
 
 @dataclass
@@ -94,14 +100,11 @@ class HansClient:
 
 
 class HansPlatform:
-    def __init__(self, client_name: str, game_loop: LoopThread, session_id: int = 1):
+    def __init__(self, client_name: str, loop: LoopThread, session_id: int = 1):
         self.client_name = client_name
         self.client_id = None
 
-        self._host = ""
         self._api_base = ""
-        self._port = 3000
-        self._broker_port = 9001
 
         self._session_id = str(session_id)
         self._session_topic = f"swarm/session/{self._session_id}"
@@ -112,23 +115,19 @@ class HansPlatform:
         self._session: Optional[requests.Session] = None
 
         self._mqttc = mqtt.Client(transport="websockets", clean_session=True)
+        self._mqtt_connected = False
         self._mqttc.on_connect = self._on_connect
         self._mqttc.on_message = self._on_message
 
-        self._loop_thread = game_loop
+        self._loop_thread = loop
+        self._loop_thread.add_exc_handler(lambda: self._mqtt_disconnect())
 
         # TODO: the logic for setting a question is intermingled in this class. This
         # should be refactored
         self._current_question: Optional[Question] = None
 
-    def connect(
-        self, host: str, port: Optional[int] = None, broker_port: Optional[int] = None
-    ):
-        self._host = host
-        self._port = port or self._port
-        self._broker_port = broker_port or self._broker_port
-
-        self._api_base = f"http://{self._host}:{self._port}/api/"
+    def connect(self, host: str, port: int = 3000, broker_port: int = 9001):
+        self._api_base = f"http://{host}:{port}/api/"
 
         self._session = requests.Session()
 
@@ -149,12 +148,27 @@ class HansPlatform:
         self.control_topic = f"{self._session_topic}/control/{self.client_id}"
         self.update_topic = f"{self._session_topic}/updates/{self.client_id}"
 
-        self._mqttc.connect(self._host, self._broker_port)
+        self._mqttc.connect(host, broker_port)
 
     def listen(self, *args, **kwargs):
         """Listen to incoming MQTT requests and start the game loop thread"""
         self._loop_thread.start()
+        self._mqtt_connected = True
         self._mqttc.loop_forever(*args, **kwargs)
+        if self._loop_thread.exc_info is not None:
+            raise_from_exc_info(self._loop_thread.exc_info)
+
+    def disconnect(self):
+        self._mqtt_disconnect()
+        if self._session is not None:
+            self._session.close()
+        if self._loop_thread.is_alive():
+            self._loop_thread.quit()
+
+    def _mqtt_disconnect(self):
+        if self._mqttc is not None and self._mqtt_connected:
+            self._mqtt_connected = False
+            self._mqttc.disconnect()
 
     def _send_ready_msg(self):
         self._mqttc.publish(
@@ -244,6 +258,4 @@ class HansPlatform:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        # TODO: stop the loop thread and disconnect from mqtt
-        if self._session is not None:
-            self._session.close()
+        self.disconnect()

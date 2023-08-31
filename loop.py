@@ -20,9 +20,11 @@ from __future__ import annotations
 import threading
 import time
 import numpy as np
-from typing import Dict, List, Optional, TYPE_CHECKING
+from typing import Dict, List, Optional, Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from sys import OptExcInfo
+
     from position_codec import PositionCodec
     from client import HansClient, Round
 
@@ -45,6 +47,7 @@ class State:
         }
 
 
+# TODO: change this name for a better one
 class StateHandler:
     """Class to update the global state given individual delta updates. In a real
     game, we would poll the I/O system to get the latest network messages"""
@@ -126,6 +129,12 @@ class LoopThread(threading.Thread):
 
         self._current_state_handler: Optional[StateHandler] = None
 
+        # Called when an exception happens
+        self._exc_handler: Optional[Callable[[None], None]] = None
+
+        # Stores the exception info in case one is reaised
+        self.exc_info: OptExcInfo = None
+
     def stop(self):
         """Stops and clears the currently executing loop. This implies that the
         state of the loop is lost (but not the one of the Loop instance).
@@ -160,11 +169,16 @@ class LoopThread(threading.Thread):
         self._continue.set()
 
     def run(self):
-        while self._continue.wait():
-            if self._thread_quit.is_set():
-                break
+        try:
+            while self._continue.wait():
+                if self._thread_quit.is_set():
+                    break
+                self._run_loop()
+        except Exception:
+            import sys
 
-            self._run_loop()
+            self.exc_info = sys.exc_info()
+            self._exc_handler()
 
     def _run_loop(self):
         current_time = time.monotonic()
@@ -209,3 +223,8 @@ class LoopThread(threading.Thread):
 
         position = np.array(data["position"])
         self._current_state_handler.update_state(participant_id, position)
+
+    def add_exc_handler(self, exc_handler: Callable[[None], None]):
+        """Sets the handler that will be called when there is an exception in the loop"""
+
+        self._exc_handler = exc_handler
