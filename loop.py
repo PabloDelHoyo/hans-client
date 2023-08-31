@@ -31,10 +31,8 @@ if TYPE_CHECKING:
     from client import HansClient, Round
 
 
-
-
 class Loop:
-    def __init__(self, round):
+    def __init__(self, round: Round):
         self.round = round
 
     def render(self, hans_client: HansClient, sync_ratio: float):
@@ -104,9 +102,7 @@ class LoopThread(threading.Thread):
         self._current_hans_client = hans_client
 
         participant_ids = [participant.id for participant in round.participants]
-        self._current_state= State(
-            hans_client.pcodec, participant_ids, hans_client.id
-        )
+        self._current_state = State(hans_client.pcodec, participant_ids, hans_client.id)
 
         self._continue.set()
         self._current_loop_quit.clear()

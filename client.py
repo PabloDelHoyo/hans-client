@@ -2,15 +2,13 @@ from __future__ import annotations
 
 from typing import Optional
 import json
-from PIL import Image
-from io import BytesIO
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from datetime import datetime
 
 import requests
 import paho.mqtt.client as mqtt
 
+from model import Question, Round, Participant
 from exceptions import CannotStartRoundException
 from position_codec import PositionCodec
 
@@ -19,61 +17,16 @@ if TYPE_CHECKING:
     import numpy as np
     from loop import Loop, LoopThread
 
+TOPIC_BASE = "swarm/session/{session_id}"
+API_BASE = "http://{host}:{port}/api/"
+
+CONTROL_TOPIC = "{topic_base}/control/{client_id}"
+UPDATES_TOPIC = "{topic_base}/updates/{client_id}"
+
 
 def raise_from_exc_info(exc_info: ExcInfo):
     _, value, traceback = exc_info
     raise value.with_traceback(traceback)
-
-
-@dataclass
-class Question:
-    id: int
-    collection_id: str
-    prompt: str
-    answers: list[str]
-    img: Image
-
-    @classmethod
-    def from_setup_msg(cls, session, api_base, setup_msg_payload):
-        collection_id = setup_msg_payload["collection_id"]
-        question_id = setup_msg_payload["question_id"]
-
-        # TODO: handle possible errors (timeout or missing json)
-        response = session.get(f"{api_base}/question/{collection_id}/{question_id}")
-        data = response.json()
-
-        # TODO: we could load the image when the question starts.
-        # The main downside is that if, for whatever reason, we are not able to
-        # load the it, there is no way to tell the server.
-        #
-        # I guess the the server knows that everything went right
-        # if it has received the corresponding ready messages.
-        image_response = session.get(
-            f"{api_base}/question/{collection_id}/{question_id}/image"
-        )
-
-        img = Image.open(BytesIO(image_response.content))
-
-        return cls(
-            id=question_id,
-            collection_id=collection_id,
-            prompt=data["prompt"],
-            answers=data["answers"],
-            img=img,
-        )
-
-
-@dataclass
-class Participant:
-    name: str
-    id: int
-
-
-@dataclass
-class Round:
-    question: Question
-    duration: int
-    participants: list[Participant]
 
 
 class HansClient:
@@ -86,8 +39,8 @@ class HansClient:
         if encode:
             position = self.pcodec.encode(position)
 
-        self._platform._publish(
-            self._platform.update_topic,
+        self._platform.publish(
+            "updates",
             {
                 "data": {"position": list(position)},
                 "timeStamp": datetime.now().isoformat(),
@@ -107,10 +60,10 @@ class HansPlatform:
         self._api_base = ""
 
         self._session_id = str(session_id)
-        self._session_topic = f"swarm/session/{self._session_id}"
+        self._session_topic = TOPIC_BASE.format(session_id=session_id)
 
-        self.control_topic = ""
-        self.update_topic = ""
+        self._control_topic = ""
+        self._update_topic = ""
 
         self._session: Optional[requests.Session] = None
 
@@ -127,13 +80,13 @@ class HansPlatform:
         self._current_question: Optional[Question] = None
 
     def connect(self, host: str, port: int = 3000, broker_port: int = 9001):
-        self._api_base = f"http://{host}:{port}/api/"
+        self._api_base = API_BASE.format(host=host, port=port)
 
         self._session = requests.Session()
 
         # Send login request
-        req = self._session.post(
-            f"{self._api_base}/session/{self._session_id}/participants",
+        req = self.post(
+            f"/session/{self._session_id}/participants",
             json={"user": self.client_name},
         )
 
@@ -145,10 +98,35 @@ class HansPlatform:
             raise ValueError(f"There does not exist session with id {self._session_id}")
 
         self.client_id = str(req.json()["id"])
-        self.control_topic = f"{self._session_topic}/control/{self.client_id}"
-        self.update_topic = f"{self._session_topic}/updates/{self.client_id}"
+
+        self._control_topic = CONTROL_TOPIC.format(
+            topic_base=self._session_topic, client_id=self.client_id
+        )
+        self._update_topic = UPDATES_TOPIC.format(
+            topic_base=self._session_topic, client_id=self.client_id
+        )
 
         self._mqttc.connect(host, broker_port)
+
+    def get(self, endpoint: str, *req_args, **req_kwargs) -> requests.Response:
+        return self._session.get(
+            f"{self._api_base}/{endpoint}", *req_args, **req_kwargs
+        )
+
+    def post(self, endpoint: str, *req_args, **req_kwargs) -> requests.Response:
+        return self._session.post(
+            f"{self._api_base}/{endpoint}", *req_args, **req_kwargs
+        )
+
+    def publish(self, topic: str, payload):
+        if topic == "control":
+            send_topic = self._control_topic
+        elif topic == "updates":
+            send_topic = self._update_topic
+        else:
+            raise ValueError("Incorrect topic")
+
+        self._mqttc.publish(send_topic, payload=json.dumps(payload))
 
     def listen(self, *args, **kwargs):
         """Listen to incoming MQTT requests and start the game loop thread"""
@@ -171,8 +149,8 @@ class HansPlatform:
             self._mqttc.disconnect()
 
     def _send_ready_msg(self):
-        self._mqttc.publish(
-            self.control_topic,
+        self.publish(
+            "control",
             payload=json.dumps(
                 {
                     "type": "ready",
@@ -183,13 +161,17 @@ class HansPlatform:
         )
 
     def _on_connect(self, client, userdata, flags, rc):
-        self._mqttc.subscribe(f"{self._session_topic}/control/#")
-        self._mqttc.subscribe(f"{self._session_topic}/updates/#")
+        self._mqttc.subscribe(
+            CONTROL_TOPIC.format(topic_base=self._session_topic, client_id="#")
+        )
+        self._mqttc.subscribe(
+            UPDATES_TOPIC.format(topic_base=self._session_topic, client_id="#")
+        )
 
         # This must be sent so that the client's name appears to the admin in the text area
         # where all connected clients are shown
-        self._publish(
-            self.control_topic,
+        self.publish(
+            "control",
             {
                 "type": "join",
                 "participant": self.client_id,
@@ -214,15 +196,13 @@ class HansPlatform:
 
     def _handle_control_msgs(self, payload):
         if payload["type"] == "setup":
-            self._current_question = Question.from_setup_msg(
-                self._session, self._api_base, payload
-            )
+            self._current_question = Question.from_hans_platform(self, payload)
 
-            print(f"The question has changed '{self._current_question.prompt}'")
+            print(f"The question has changed to  '{self._current_question.prompt}'")
 
             # I think this is to inform that everything went right
-            self._publish(
-                self.control_topic,
+            self.publish(
+                "control",
                 {
                     "type": "ready",
                     "participant": self.client_id,
@@ -244,15 +224,12 @@ class HansPlatform:
             self._loop_thread.stop()
 
     def _all_participants(self) -> list[str]:
-        req = self._session.post(
-            f"{self._api_base}/session/{self._session_id}/allParticipants",
+        req = self.post(
+            f"session/{self._session_id}/allParticipants",
             json={"user": "admin", "pass": "admin"},
         )
 
         return [Participant(user["username"], user["id"]) for user in req.json()]
-
-    def _publish(self, topic: str, payload):
-        self._mqttc.publish(topic, payload=json.dumps(payload))
 
     def __enter__(self):
         return self
