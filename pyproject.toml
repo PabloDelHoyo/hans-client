@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hans-client"
-version = "0.1.0"
+version = "1.0.0"
 authors = [
   { name="Pablo del Hoyo Abad", email="pablo.hoyo@alu.uclm.es" },
 ]
@@ -14,7 +14,8 @@ requires-python = ">=3.7"
 dependencies = [
     "requests",
     "numpy",
-    "paho-mqtt"
+    "paho-mqtt",
+    "Pillow"
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
