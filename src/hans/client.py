@@ -198,8 +198,6 @@ class HansPlatform:
         if payload["type"] == "setup":
             self._current_question = Question.from_hans_platform(self, payload)
 
-            print(f"The question has changed to  '{self._current_question.prompt}'")
-
             # I think this is to inform that everything went right
             self.publish(
                 "control",
@@ -210,7 +208,6 @@ class HansPlatform:
                 },
             )
         elif payload["type"] == "start":
-            print(f"A round has started")
             if self._current_question is None:
                 raise CannotStartRoundException("The question has not been set")
 

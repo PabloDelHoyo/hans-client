@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hans-client"
+version = "0.1.0"
+authors = [
+  { name="Pablo del Hoyo Abad", email="pablo.hoyo@alu.uclm.es" },
+]
+description = "A python client which interacts with the HANS platform"
+readme = "README.md"
+requires-python = ">=3.7"
+dependencies = [
+    "requests",
+    "numpy",
+    "paho-mqtt"
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
