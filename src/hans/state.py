@@ -7,7 +7,7 @@ import threading
 import numpy as np
 
 if TYPE_CHECKING:
-    from position_codec import PositionCodec
+    from .position_codec import PositionCodec
 
 
 class StateSnapshot:

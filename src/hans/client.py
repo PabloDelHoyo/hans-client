@@ -8,14 +8,14 @@ from datetime import datetime
 import requests
 import paho.mqtt.client as mqtt
 
-from model import Question, Round, Participant
-from exceptions import CannotStartRoundException
-from position_codec import PositionCodec
+from .model import Question, Round, Participant
+from .exceptions import CannotStartRoundException
+from .position_codec import PositionCodec
 
 if TYPE_CHECKING:
     from sys import ExcInfo
     import numpy as np
-    from loop import Loop, LoopThread
+    from .loop import LoopThread
 
 TOPIC_BASE = "swarm/session/{session_id}"
 API_BASE = "http://{host}:{port}/api/"
@@ -95,7 +95,8 @@ class HansPlatform:
                 f"There already exists an user with the name {self.client_name}"
             )
         elif req.content == b"Session not found":
-            raise ValueError(f"There does not exist session with id {self._session_id}")
+            raise ValueError(
+                f"There does not exist session with id {self._session_id}")
 
         self.client_id = str(req.json()["id"])
 
@@ -192,7 +193,8 @@ class HansPlatform:
             # Right now, update messsages are sent when the users are responding. If it were
             # not the case, we would have to keep track of the state in which the client is
             participant_id = int(msg.topic.split("/")[-1])
-            self._loop_thread.on_changed_position(participant_id, payload["data"])
+            self._loop_thread.on_changed_position(
+                participant_id, payload["data"])
 
     def _handle_control_msgs(self, payload):
         if payload["type"] == "setup":
@@ -209,12 +211,15 @@ class HansPlatform:
             )
         elif payload["type"] == "start":
             if self._current_question is None:
-                raise CannotStartRoundException("The question has not been set")
+                raise CannotStartRoundException(
+                    "The question has not been set")
 
             participants = self._all_participants()
-            new_round = Round(self._current_question, payload["duration"], participants)
+            new_round = Round(self._current_question,
+                              payload["duration"], participants)
             hans_client = HansClient(
-                self, PositionCodec(num_answers=len(new_round.question.answers))
+                self, PositionCodec(num_answers=len(
+                    new_round.question.answers))
             )
             self._loop_thread.new_loop(new_round, hans_client)
         elif payload["type"] == "stop":

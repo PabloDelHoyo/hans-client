@@ -22,13 +22,13 @@ import time
 import numpy as np
 from typing import Optional, Callable, TYPE_CHECKING
 
-from state import State
+from .state import State
 
 if TYPE_CHECKING:
     from sys import OptExcInfo
 
-    from state import StateSnapshot
-    from client import HansClient, Round
+    from .state import StateSnapshot
+    from .client import HansClient, Round
 
 
 class Loop:
@@ -101,8 +101,10 @@ class LoopThread(threading.Thread):
         self._current_loop = self._loop_cls(round=round, **self._loop_kwargs)
         self._current_hans_client = hans_client
 
-        participant_ids = [participant.id for participant in round.participants]
-        self._current_state = State(hans_client.pcodec, participant_ids, hans_client.id)
+        participant_ids = [
+            participant.id for participant in round.participants]
+        self._current_state = State(
+            hans_client.pcodec, participant_ids, hans_client.id)
 
         self._continue.set()
         self._current_loop_quit.clear()

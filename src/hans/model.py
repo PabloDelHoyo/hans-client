@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
-    from client import HansPlatform
+    from .client import HansPlatform
 
 
 @dataclass
@@ -33,7 +33,8 @@ class Question:
         #
         # I guess the the server knows that everything went right
         # if it has received the corresponding ready messages.
-        image_response = platform.get(f"question/{collection_id}/{question_id}/image")
+        image_response = platform.get(
+            f"question/{collection_id}/{question_id}/image")
         img = Image.open(BytesIO(image_response.content))
 
         return cls(
