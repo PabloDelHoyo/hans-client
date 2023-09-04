@@ -32,10 +32,19 @@ if TYPE_CHECKING:
 
 
 class Loop:
-    def __init__(self, round: Round):
-        self.round = round
+    """ All the logic to control a client must be included in a subclass
+    inheriting from this one. It is not necessary to override the constructor
+    """
 
-    def render(self, hans_client: HansClient, sync_ratio: float):
+    def __init__(self, round: Round, client: HansClient):
+        self.round = round
+        self.client = client
+
+    def setup(self, **kwargs):
+        """ This is where all initialization code should go. Positional arguments
+        are not allowed"""
+
+    def render(self, sync_ratio: float):
         """This is where all code in which message packets are sent must go.
         Right now, those packets only contain position information.
 
@@ -46,7 +55,7 @@ class Loop:
     def update(self, snapshot: StateSnapshot, delta: float):
         """All code related to the calculation of the next position.
 
-        The rate which this method is called is guaranteed to be constant so delta is fixed.
+        The rate at which this method is called is guaranteed to be constant so delta is fixed.
         """
 
 
@@ -59,8 +68,6 @@ class LoopThread(threading.Thread):
 
         self._loop_cls = loop_cls
         self._loop_kwargs = loop_kwargs
-
-        self._current_hans_client = None
 
         self._max_frame_time = 1 / fps
         self._delta = 1 / tps
@@ -98,8 +105,11 @@ class LoopThread(threading.Thread):
         will stay idle.
         """
 
-        self._current_loop = self._loop_cls(round=round, **self._loop_kwargs)
-        self._current_hans_client = hans_client
+        self._current_loop = self._loop_cls(
+            round=round, client=hans_client,
+        )
+
+        self._current_loop.setup(**self._loop_kwargs)
 
         participant_ids = [
             participant.id for participant in round.participants]
@@ -138,8 +148,7 @@ class LoopThread(threading.Thread):
             current_time = new_time
 
             accumulator += frame_time
-            # In the article, the frame time is upper bounded (0.25ms). I think
-            # this is to avoid "the spiral of hell" introduced in the article
+            # TODO: bound frame_time to avoid "the spiral of hell"
 
             while accumulator >= self._delta and not self._current_loop_quit.is_set():
                 snapshot = self._current_state.get_snapshot()
@@ -147,9 +156,7 @@ class LoopThread(threading.Thread):
                 accumulator -= self._delta
 
             if not self._current_loop_quit.is_set():
-                self._current_loop.render(
-                    self._current_hans_client, accumulator / self._delta
-                )
+                self._current_loop.render(accumulator / self._delta)
 
             remaining_frame_time = self._max_frame_time - (
                 time.monotonic() - current_time
