@@ -13,19 +13,19 @@ if TYPE_CHECKING:
 class StateSnapshot:
     def __init__(self, state: dict[int, np.ndarray], client_id: int):
         self._state = state
+        self._array_state = list(state.values())
         self._client_id = client_id
 
-    @property
-    def all_positions(self) -> dict[int, np.ndarray]:
-        return self._state
+    def position_by_id(self, participant_id: int) -> np.ndarray:
+        return self._state[participant_id]
 
     @property
-    def other_participants_positions(self) -> dict[int, np.ndarray]:
-        return {
-            participant_id: position
-            for participant_id, position in self._state.items()
-            if participant_id != self._client_id
-        }
+    def all_positions(self) -> np.ndarray:
+        return self._array_state
+
+    @property
+    def other_positions(self) -> np.ndarray:
+        return [position for participant_id, position in self._state.items() if participant_id != self._client_id]
 
 
 class State:
