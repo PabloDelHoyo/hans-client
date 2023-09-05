@@ -43,7 +43,7 @@ class State:
             participant_id: np.zeros(2) for participant_id in participant_ids
         }
 
-        # We don't want the state to be updated when it is being copy in "get_state"
+        # We don't want the state to be updated when it is being copy in "get_snapshot"
         self._lock = threading.Lock()
 
     def update(self, participant_id: int, position: np.ndarray):

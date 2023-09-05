@@ -58,6 +58,10 @@ class Loop:
         The rate at which this method is called is guaranteed to be constant so delta is fixed.
         """
 
+    def close(self):
+        """Called when a question finishes. It is guaranted no update() nor render() calls
+        will happen after this method is called"""
+
 
 class LoopThread(threading.Thread):
     def __init__(self, loop_cls, fps=20, tps=20, loop_kwargs={}):
@@ -72,12 +76,17 @@ class LoopThread(threading.Thread):
         self._max_frame_time = 1 / fps
         self._delta = 1 / tps
 
-        # A boolean flag would have been enough but that assumes that
-        # we are working with a Python implementation which uses the GIL.
-        # Thererfore, event is more robust
+        # signals that the currently running loop must stop
         self._current_loop_quit = threading.Event()
+
+        # blocks the thread until a new loop is created
         self._continue = threading.Event()
+
+        # signals whether this thread should be killed
         self._thread_quit = threading.Event()
+
+        # to avoid race conditions when calling close
+        self._loop_finished = threading.Event()
 
         # These will be set when a new loop is called
         self._current_loop: Optional[Loop] = None
@@ -97,6 +106,9 @@ class LoopThread(threading.Thread):
 
         self._current_loop_quit.set()
         self._continue.clear()
+
+        self._loop_finished.wait()
+        self._current_loop.close()
 
     def new_loop(self, round: Round, hans_client: HansClient):
         """Creates a new game loop in this thread for the given round.
@@ -129,9 +141,11 @@ class LoopThread(threading.Thread):
     def run(self):
         try:
             while self._continue.wait():
+                self._loop_finished.clear()
                 if self._thread_quit.is_set():
                     break
                 self._run_loop()
+                self._loop_finished.set()
         except Exception:
             import sys
 
