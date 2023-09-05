@@ -27,6 +27,9 @@ This method is not guaranteed to be called at the same rate. That will depend on
 
 The main purpose of `render` is sending the position to the server.
 
+* `close()`
+
+Called when a round finishes. It is guaranteed to be the last call
 
 Additionally, a subclass of `Loop` inherits two attributes:
 * `round`: It contains all the useful information for a question
@@ -47,6 +50,9 @@ class AgentLogic(Loop):
     def render(self, sync_ratio: float):
         # Most of the time, you will do the following
         self.client.send_position(self.position)
+    
+    def close(self):
+        # last of piece of code executed 
 ```
 
 NOTE: keep in mind that an instance of a `Loop` is destroyed when a round finishes and a fresh one will be created when a new question starts.
