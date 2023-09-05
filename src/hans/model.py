@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
+    import numpy as np
     from .client import HansPlatform
 
 
@@ -57,3 +58,4 @@ class Round:
     question: Question
     duration: int
     participants: list[Participant]
+    answer_positions: np.ndarray  # Shape: (len(question.answers), 2)

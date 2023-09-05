@@ -8,6 +8,7 @@ from datetime import datetime
 import requests
 import paho.mqtt.client as mqtt
 
+from . import utils
 from .model import Question, Round, Participant
 from .exceptions import CannotStartRoundException
 from .position_codec import PositionCodec
@@ -98,7 +99,7 @@ class HansPlatform:
             raise ValueError(
                 f"There does not exist session with id {self._session_id}")
 
-        self.client_id = str(req.json()["id"])
+        self.client_id = req.json()["id"]
 
         self._control_topic = CONTROL_TOPIC.format(
             topic_base=self._session_topic, client_id=self.client_id
@@ -215,11 +216,16 @@ class HansPlatform:
                     "The question has not been set")
 
             participants = self._all_participants()
+            answer_positions = utils.calculate_answer_points(
+                len(self._current_question.answers)
+            )
+
             new_round = Round(self._current_question,
-                              payload["duration"], participants)
+                              payload["duration"], participants,
+                              answer_positions)
+
             hans_client = HansClient(
-                self, PositionCodec(num_answers=len(
-                    new_round.question.answers))
+                self, PositionCodec(answer_positions)
             )
             self._loop_thread.new_loop(new_round, hans_client)
         elif payload["type"] == "stop":
