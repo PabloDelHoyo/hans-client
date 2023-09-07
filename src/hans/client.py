@@ -4,7 +4,7 @@ from typing import Optional
 import logging
 import json
 from typing import TYPE_CHECKING
-from datetime import datetime
+from datetime import datetime, timezone
 
 import requests
 import paho.mqtt.client as mqtt
@@ -39,7 +39,6 @@ class HansClient:
         self.pcodec = pcodec
 
     def send_position(self, position: np.ndarray, encode=True):
-        # TODO: check if the date format is the one expected by the hans platform
         if encode:
             position = self.pcodec.encode(position)
 
@@ -47,7 +46,7 @@ class HansClient:
             "updates",
             {
                 "data": {"position": list(position)},
-                "timeStamp": datetime.now().isoformat(),
+                "timeStamp": datetime.now().astimezone(timezone.utc).isoformat(),
             },
         )
 
