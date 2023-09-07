@@ -10,7 +10,7 @@ $ python3 -m pip install git+https://github.com/PabloDelHoyo/hans-client
 ```
 
 ## Usage
-The structure of a client is very similar to the one followed by a game loop. All the logic which makes the agent move must be in subclass of `Loop`. These are the most important methods that you can override, but that is not compulsory:
+The structure of a client is very similar to the one followed by a game loop. All the logic which makes the agent move must be in a subclass of `Loop`. These are the most important methods that you can override, but that is not compulsory:
 * `setup(arg1, arg2, ...)`. 
 
 This method is called every time a new round starts (when the participant start to answer by moving their square). It receives as many arguments as the creator of the subclass wants.
@@ -74,6 +74,25 @@ with HansPlatform("agent name", loop) as platform:
     platform.connect("host")
     platform.listen()
 ```
+
+## Logging
+`hans-client` uses the built-in `logging` module to log messages. By default, it does not send the logs anywhere. In order to do that, you must configure it. All used loggers have as parent a logger called `hans`. For a very basic configuration, you can do the following.
+```python
+def configure_logger(level, formatter, handler=logging.StreamHandler()):
+    handler.setFormatter(formatter)
+
+    logger = logging.getLogger("hans")
+    logger.setLevel(level)
+    logger.addHandler(handler)
+
+# If you want to log info messages, write
+# logging.INFO
+configure_logger(
+    logging.DEBUG,
+    logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+)
+```
+In order to see everything you can do with the `logging`, I recommend you read the official documentation.
 
 ## Examples
 In the `examples/` directory, there are some examples which show different clients interacting with the platform in different ways. You can run each one of them as a standalone script but before doing that make sure that all server related settings (host, port, etc) are configured correctly.
