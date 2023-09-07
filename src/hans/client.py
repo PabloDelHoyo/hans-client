@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from .loop import LoopThread
 
 TOPIC_BASE = "swarm/session/{session_id}"
-API_BASE = "http://{host}:{port}/api/"
+API_BASE = "http://{host}:{port}/api"
 
 CONTROL_TOPIC = "{topic_base}/control/{client_id}"
 UPDATES_TOPIC = "{topic_base}/updates/{client_id}"
