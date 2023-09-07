@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Optional
+import logging
 import json
 from typing import TYPE_CHECKING
 from datetime import datetime
@@ -23,6 +24,8 @@ API_BASE = "http://{host}:{port}/api/"
 
 CONTROL_TOPIC = "{topic_base}/control/{client_id}"
 UPDATES_TOPIC = "{topic_base}/updates/{client_id}"
+
+logger = logging.getLogger(__name__)
 
 
 def raise_from_exc_info(exc_info: ExcInfo):
@@ -76,8 +79,6 @@ class HansPlatform:
         self._loop_thread = loop
         self._loop_thread.add_exc_handler(lambda: self._mqtt_disconnect())
 
-        # TODO: the logic for setting a question is intermingled in this class. This
-        # should be refactored
         self._current_question: Optional[Question] = None
 
     def connect(self, host: str, port: int = 3000, broker_port: int = 9001):
@@ -87,7 +88,7 @@ class HansPlatform:
 
         # Send login request
         req = self.post(
-            f"/session/{self._session_id}/participants",
+            f"session/{self._session_id}/participants",
             json={"user": self.client_name},
         )
 
@@ -108,16 +109,25 @@ class HansPlatform:
             topic_base=self._session_topic, client_id=self.client_id
         )
 
+        logger.info("Connecting to MQTT broker at %s:%s", host, broker_port)
+
         self._mqttc.connect(host, broker_port)
 
-    def get(self, endpoint: str, *req_args, **req_kwargs) -> requests.Response:
+    def get(self, endpoint: str, **req_kwargs) -> requests.Response:
+        uri = f"{self._api_base}/{endpoint}"
+        logger.debug("Sending GET request to %s", uri)
         return self._session.get(
-            f"{self._api_base}/{endpoint}", *req_args, **req_kwargs
+            uri, **req_kwargs
         )
 
-    def post(self, endpoint: str, *req_args, **req_kwargs) -> requests.Response:
+    def post(self, endpoint: str, json=None, **req_kwargs) -> requests.Response:
+        uri = f"{self._api_base}/{endpoint}"
+
+        payload_debug = "empty payload" if json is None else f"payload {json}"
+        logger.debug("Sending POST request to %s with %s", uri, payload_debug)
+
         return self._session.post(
-            f"{self._api_base}/{endpoint}", *req_args, **req_kwargs
+            uri, json=json, **req_kwargs
         )
 
     def publish(self, topic: str, payload):
@@ -128,10 +138,15 @@ class HansPlatform:
         else:
             raise ValueError("Incorrect topic")
 
-        self._mqttc.publish(send_topic, payload=json.dumps(payload))
+        payload = json.dumps(payload)
+        logger.debug("Publishing to topic '%s' with payload '%s'",
+                     topic, payload)
+        self._mqttc.publish(send_topic, payload=payload)
 
     def listen(self, *args, **kwargs):
         """Listen to incoming MQTT requests and start the game loop thread"""
+
+        logger.info("Start listening for incoming MQTT packets")
         self._loop_thread.start()
         self._mqtt_connected = True
         self._mqttc.loop_forever(*args, **kwargs)
@@ -139,6 +154,7 @@ class HansPlatform:
             raise_from_exc_info(self._loop_thread.exc_info)
 
     def disconnect(self):
+        logger.info("Disconnecting from MQTT broker")
         self._mqtt_disconnect()
         if self._session is not None:
             self._session.close()
@@ -163,12 +179,15 @@ class HansPlatform:
         )
 
     def _on_connect(self, client, userdata, flags, rc):
-        self._mqttc.subscribe(
-            CONTROL_TOPIC.format(topic_base=self._session_topic, client_id="#")
-        )
-        self._mqttc.subscribe(
-            UPDATES_TOPIC.format(topic_base=self._session_topic, client_id="#")
-        )
+        control_topic = CONTROL_TOPIC.format(
+            topic_base=self._session_topic, client_id="#")
+        logger.debug("Subscribing to %s", control_topic)
+        self._mqttc.subscribe(control_topic)
+
+        updates_topic = UPDATES_TOPIC.format(
+            topic_base=self._session_topic, client_id="#")
+        logger.debug("Subscribing to %s", updates_topic)
+        self._mqttc.subscribe(updates_topic)
 
         # This must be sent so that the client's name appears to the admin in the text area
         # where all connected clients are shown
@@ -189,6 +208,9 @@ class HansPlatform:
         is_control = "type" in payload
 
         if is_control:
+            logger.debug(
+                "Received control msg from '%s' with payload '%s'", msg.topic, payload
+            )
             self._handle_control_msgs(payload)
         else:
             # Right now, update messsages are sent when the users are responding. If it were
