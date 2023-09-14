@@ -60,9 +60,18 @@ class HansClient:
 
 
 class HansPlatform:
-    def __init__(self, client_name: str, loop: LoopThread, session_id: int = 1):
+    def __init__(
+            self,
+            client_name: str,
+            loop: LoopThread,
+            session_id: int = 1,
+            *,
+            hexagon_radius: float=340):
+
         self.client_name = client_name
         self.client_id = None
+
+        self._hexagon_radius = hexagon_radius
 
         self._api_base = ""
 
@@ -242,7 +251,7 @@ class HansPlatform:
 
             participants = self._all_participants()
             answer_positions = utils.calculate_answer_points(
-                len(self._current_question.answers)
+                len(self._current_question.answers), self._hexagon_radius
             )
 
             new_round = Round(self._current_question,

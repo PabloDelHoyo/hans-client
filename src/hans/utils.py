@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 
-def calculate_answer_points(num_answers: int, radius: float = 430):
+def calculate_answer_points(num_answers: int, radius: float):
     # Keep in mind that the basis vector for the y axis points downwards. Therefore,
     # in this case, the first response will be drawn upwards (at pi / 2)
 
