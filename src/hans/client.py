@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from datetime import datetime, timezone
 
 import requests
+import numpy as np
 import paho.mqtt.client as mqtt
 
 from . import utils
@@ -16,7 +17,6 @@ from .position_codec import PositionCodec
 
 if TYPE_CHECKING:
     from sys import ExcInfo
-    import numpy as np
     from .loop import LoopThread
 
 TOPIC_BASE = "swarm/session/{session_id}"
@@ -40,7 +40,11 @@ class HansClient:
 
     def send_position(self, position: np.ndarray, encode=True):
         if encode:
-            position = self.pcodec.encode(position)
+            try:
+                position = self.pcodec.encode(position)
+            except np.linalg.LinAlgError:
+                logger.warning("Cannot encode %s. The position won't be sent", position)
+                return
 
         self._platform.publish(
             "updates",
