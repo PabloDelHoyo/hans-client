@@ -234,6 +234,7 @@ class HansPlatform:
     def _handle_control_msgs(self, payload):
         if payload["type"] == "setup":
             self._current_question = Question.from_hans_platform(self, payload)
+            logger.info("The question has changed")
 
             # I think this is to inform that everything went right
             self.publish(
@@ -262,8 +263,10 @@ class HansPlatform:
                 self, PositionCodec(answer_positions)
             )
             self._loop_thread.new_loop(new_round, hans_client)
+            logger.info("The round has started")
         elif payload["type"] == "stop":
             self._loop_thread.stop()
+            logger.info("The round has stopped")
 
     def _all_participants(self) -> list[str]:
         req = self.post(
