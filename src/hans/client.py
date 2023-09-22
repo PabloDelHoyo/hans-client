@@ -43,7 +43,8 @@ class HansClient:
             try:
                 position = self.pcodec.encode(position)
             except np.linalg.LinAlgError:
-                logger.warning("Cannot encode %s. The position won't be sent", position)
+                logger.warning(
+                    "Cannot encode %s. The position won't be sent", position)
                 return
 
         self._platform.publish(
@@ -66,7 +67,7 @@ class HansPlatform:
             loop: LoopThread,
             session_id: int = 1,
             *,
-            hexagon_radius: float=340):
+            hexagon_radius: float = 340):
 
         self.client_name = client_name
         self.client_id = None
@@ -98,7 +99,6 @@ class HansPlatform:
 
         self._session = requests.Session()
 
-        # Send login request
         req = self.post(
             f"session/{self._session_id}/participants",
             json={"user": self.client_name},
@@ -175,6 +175,7 @@ class HansPlatform:
 
     def _mqtt_disconnect(self):
         if self._mqttc is not None and self._mqtt_connected:
+            self._set_offline()
             self._mqtt_connected = False
             self._mqttc.disconnect()
 
@@ -236,7 +237,6 @@ class HansPlatform:
             self._current_question = Question.from_hans_platform(self, payload)
             logger.info("The question has changed")
 
-            # I think this is to inform that everything went right
             self.publish(
                 "control",
                 {
@@ -275,6 +275,14 @@ class HansPlatform:
         )
 
         return [Participant(user["username"], user["id"]) for user in req.json()]
+
+    def _set_offline(self):
+        self.post(f"session/{self._session_id}/participants/{self.client_id}")
+        self.publish("control", {
+            "type": "leave",
+            "participant": self.client_id,
+            "session": self._session_id
+        })
 
     def __enter__(self):
         return self

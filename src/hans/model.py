@@ -41,7 +41,7 @@ class Question:
         return cls(
             id=question_id,
             collection_id=collection_id,
-            prompt=data["prompt"],
+            prompt=data["question"],
             answers=data["answers"],
             img=img,
         )
