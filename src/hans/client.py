@@ -5,6 +5,8 @@ import logging
 import json
 from typing import TYPE_CHECKING
 from datetime import datetime, timezone
+from PIL import Image
+from io import BytesIO
 
 import requests
 import numpy as np
@@ -28,14 +30,40 @@ UPDATES_TOPIC = "{topic_base}/updates/{client_id}"
 logger = logging.getLogger(__name__)
 
 
-def raise_from_exc_info(exc_info: ExcInfo):
+def _raise_from_exc_info(exc_info: ExcInfo):
     _, value, traceback = exc_info
     raise value.with_traceback(traceback)
 
 
+def _get(req_session: requests.Session,
+         api_base: str,
+         endpoint: str, **req_kwargs) -> requests.Response:
+    uri = f"{api_base}/{endpoint}"
+    logger.debug("Sending GET request to %s", uri)
+    return req_session.get(
+        uri, **req_kwargs
+    )
+
+
+def _post(req_session: requests.Session,
+          api_base: str,
+          endpoint: str, json=None, **req_kwargs) -> requests.Response:
+
+    uri = f"{api_base}/{endpoint}"
+
+    payload_debug = "empty payload" if json is None else f"payload {json}"
+    logger.debug("Sending POST request to %s with %s", uri, payload_debug)
+
+    return req_session.post(
+        uri, json=json, **req_kwargs
+    )
+
+
 class HansClient:
-    def __init__(self, platform: HansPlatform, pcodec: PositionCodec):
-        self._platform = platform
+    """Wrapper which only expose the needed functionality from HansPlatform to a Loop instance"""
+
+    def __init__(self, api_wrapper: _HansApiWrapper, pcodec: PositionCodec):
+        self._api_wrapper = api_wrapper
         self.pcodec = pcodec
 
     def send_position(self, position: np.ndarray, encode=True):
@@ -47,7 +75,7 @@ class HansClient:
                     "Cannot encode %s. The position won't be sent", position)
                 return
 
-        self._platform.publish(
+        self._api_wrapper.publish(
             "updates",
             {
                 "data": {"position": list(position)},
@@ -57,153 +85,154 @@ class HansClient:
 
     @property
     def id(self):
-        return self._platform.client_id
+        return self._api_wrapper.client_id
 
 
-class HansPlatform:
+class _HansApiWrapper:
+
     def __init__(
             self,
-            client_name: str,
-            loop: LoopThread,
-            session_id: int = 1,
-            *,
-            hexagon_radius: float = 340):
+            req_session: requests.Session,
+            mqttc: mqtt.Client,
+            session_id: int,
+            api_base: str,
+            client_id: str,
+            publish_topics: dict[str, str],
+            subscribe_topics: list[str]):
 
-        self.client_name = client_name
-        self.client_id = None
+        self._req_session = req_session
+        self._mqttc = mqttc
+        self._session_id = session_id
+        self._api_base = api_base
+        self._client_id = client_id
+        self._publish_topics = publish_topics
+        self._subscribe_topics = subscribe_topics
 
-        self._hexagon_radius = hexagon_radius
+    @classmethod
+    def from_connection(cls,
+                        client_name: str,
+                        session_id: int,
+                        host: str,
+                        port: int):
 
-        self._api_base = ""
+        mqttc = mqtt.Client(transport="websockets", clean_session=True)
+        req_session = requests.Session()
 
-        self._session_id = str(session_id)
-        self._session_topic = TOPIC_BASE.format(session_id=session_id)
+        session_id = str(session_id)
+        session_topic = TOPIC_BASE.format(session_id=session_id)
+        api_base = API_BASE.format(host=host, port=port)
 
-        self._control_topic = ""
-        self._update_topic = ""
-
-        self._session: Optional[requests.Session] = None
-
-        self._mqttc = mqtt.Client(transport="websockets", clean_session=True)
-        self._mqtt_connected = False
-        self._mqttc.on_connect = self._on_connect
-        self._mqttc.on_message = self._on_message
-
-        self._loop_thread = loop
-        self._loop_thread.add_exc_handler(lambda: self._mqtt_disconnect())
-
-        self._current_question: Optional[Question] = None
-
-    def connect(self, host: str, port: int = 3000, broker_port: int = 9001):
-        self._api_base = API_BASE.format(host=host, port=port)
-
-        self._session = requests.Session()
-
-        req = self.post(
-            f"session/{self._session_id}/participants",
-            json={"user": self.client_name},
+        req = _post(
+            req_session,
+            api_base,
+            f"session/{session_id}/participants",
+            json={"user": client_name}
         )
 
         if req.content == b"Participant already joined session":
             raise ValueError(
-                f"There already exists an user with the name {self.client_name}"
+                f"There already exists an user with the name {client_name}"
             )
         elif req.content == b"Session not found":
             raise ValueError(
-                f"There does not exist session with id {self._session_id}")
+                f"There does not exist session with id {session_id}")
 
-        self.client_id = req.json()["id"]
+        client_id = req.json()["id"]
 
-        self._control_topic = CONTROL_TOPIC.format(
-            topic_base=self._session_topic, client_id=self.client_id
+        publish_topics = {
+            "control": CONTROL_TOPIC.format(
+                topic_base=session_topic, client_id=client_id
+            ),
+            "updates": UPDATES_TOPIC.format(
+                topic_base=session_topic, client_id=client_id
+            )
+        }
+
+        subscribe_topics = [
+            CONTROL_TOPIC.format(
+                topic_base=session_topic, client_id="#"
+            ),
+            UPDATES_TOPIC.format(
+                topic_base=session_topic, client_id="#"
+            )
+        ]
+
+        return cls(
+            req_session=req_session,
+            mqttc=mqttc,
+            session_id=session_id,
+            api_base=api_base,
+            client_id=client_id,
+            publish_topics=publish_topics,
+            subscribe_topics=subscribe_topics
         )
-        self._update_topic = UPDATES_TOPIC.format(
-            topic_base=self._session_topic, client_id=self.client_id
+
+    def set_offline(self):
+        self.post(f"session/{self._session_id}/participants/{self.client_id}")
+        self.publish("control", {
+            "type": "leave",
+            "participant": self._client_id,
+            "session": self._session_id
+        })
+
+    def disconnect(self):
+        self.set_offline()
+        self._req_session.close()
+        if self._mqttc.is_connected:
+            self._mqttc.disconnect()
+
+    def get_question_from_setup_msg(self, setup_msg) -> Question:
+        collection_id = setup_msg["collection_id"]
+        question_id = setup_msg["question_id"]
+
+        # TODO: handle possible errors (timeout or missing json)
+        response = self.get(f"question/{collection_id}/{question_id}")
+        data = response.json()
+
+        # NOTE: we could load the image when the question starts.
+        # The main downside is that if, for whatever reason, we are not able to
+        # load the it, there is no way to tell the server.
+        #
+        # I guess the the server knows that everything went right
+        # if it has received the corresponding ready messages.
+        image_response = self.get(
+            f"question/{collection_id}/{question_id}/image")
+        img = Image.open(BytesIO(image_response.content))
+
+        return Question(
+            id=question_id,
+            collection_id=collection_id,
+            prompt=data["question"],
+            answers=data["answers"],
+            img=img,
         )
 
-        logger.info("Connecting to MQTT broker at %s:%s", host, broker_port)
+    def get_all_participants(self) -> list[Participant]:
+        req = self.post(
+            f"session/{self._session_id}/allParticipants",
+            json={"user": "admin", "pass": "admin"},
+        )
 
-        self._mqttc.connect(host, broker_port)
+        return [Participant(user["username"], user["id"]) for user in req.json()]
 
     def get(self, endpoint: str, **req_kwargs) -> requests.Response:
-        uri = f"{self._api_base}/{endpoint}"
-        logger.debug("Sending GET request to %s", uri)
-        return self._session.get(
-            uri, **req_kwargs
-        )
+        return _get(self._req_session, self._api_base, endpoint, **req_kwargs)
 
     def post(self, endpoint: str, json=None, **req_kwargs) -> requests.Response:
-        uri = f"{self._api_base}/{endpoint}"
-
-        payload_debug = "empty payload" if json is None else f"payload {json}"
-        logger.debug("Sending POST request to %s with %s", uri, payload_debug)
-
-        return self._session.post(
-            uri, json=json, **req_kwargs
-        )
+        return _post(self._req_session, self._api_base, endpoint, json, **req_kwargs)
 
     def publish(self, topic: str, payload):
-        if topic == "control":
-            send_topic = self._control_topic
-        elif topic == "updates":
-            send_topic = self._update_topic
-        else:
-            raise ValueError("Incorrect topic")
+        try:
+            send_topic = self._publish_topics[topic]
+        except KeyError:
+            raise ValueError("Incorrect topic") from None
 
         payload = json.dumps(payload)
         logger.debug("Publishing to topic '%s' with payload '%s'",
                      topic, payload)
         self._mqttc.publish(send_topic, payload=payload)
 
-    def listen(self, *args, **kwargs):
-        """Listen to incoming MQTT requests and start the game loop thread"""
-
-        logger.info("Start listening for incoming MQTT packets")
-        self._loop_thread.start()
-        self._mqtt_connected = True
-        self._mqttc.loop_forever(*args, **kwargs)
-        if self._loop_thread.exc_info is not None:
-            raise_from_exc_info(self._loop_thread.exc_info)
-
-    def disconnect(self):
-        logger.info("Disconnecting from MQTT broker")
-        self._mqtt_disconnect()
-        if self._session is not None:
-            self._session.close()
-        if self._loop_thread.is_alive():
-            self._loop_thread.quit()
-
-    def _mqtt_disconnect(self):
-        if self._mqttc is not None and self._mqtt_connected:
-            self._set_offline()
-            self._mqtt_connected = False
-            self._mqttc.disconnect()
-
-    def _send_ready_msg(self):
-        self.publish(
-            "control",
-            payload=json.dumps(
-                {
-                    "type": "ready",
-                    "participant": self.client_id,
-                    "session": self._session_id,
-                }
-            ),
-        )
-
-    def _on_connect(self, client, userdata, flags, rc):
-        control_topic = CONTROL_TOPIC.format(
-            topic_base=self._session_topic, client_id="#")
-        logger.debug("Subscribing to %s", control_topic)
-        self._mqttc.subscribe(control_topic)
-
-        updates_topic = UPDATES_TOPIC.format(
-            topic_base=self._session_topic, client_id="#")
-        logger.debug("Subscribing to %s", updates_topic)
-        self._mqttc.subscribe(updates_topic)
-
-        # This must be sent so that the client's name appears to the admin in the text area
-        # where all connected clients are shown
+    def send_join_msg(self):
         self.publish(
             "control",
             {
@@ -212,6 +241,98 @@ class HansPlatform:
                 "session": self._session_id,
             },
         )
+
+    def send_ready_msg(self):
+        self.publish(
+            "control",
+            {
+                "type": "ready",
+                "participant": self._client_id,
+                "session": self._session_id,
+            },
+        )
+
+    @property
+    def mqttc(self) -> mqtt.Client:
+        return self._mqttc
+
+    @property
+    def client_id(self) -> int:
+        return self._client_id
+
+    @property
+    def subscribe_topics(self) -> list[str]:
+        return self._subscribe_topics
+
+
+class HansPlatform:
+    def __init__(
+            self,
+            client_name: str,
+            loop: LoopThread,
+            *,
+            hexagon_radius: float = 340):
+
+        self.client_name = client_name
+        self._hexagon_radius = hexagon_radius
+        self._connected = False
+
+        self._api_wrapper: Optional[_HansApiWrapper] = None
+
+        self._loop_thread = loop
+
+        # This means that if there is an exception in the loop thread and, as consequence,
+        # the thread ends, the client will be disconnected from the platform because there
+        # is no way we can recover from that
+        self._loop_thread.add_exc_handler(lambda: self.disconnect())
+
+        self._current_question: Optional[Question] = None
+
+    def connect(self, host: str, port: int = 3000, broker_port: int = 9001, session_id: int = 1):
+        logger.info("Connecting to MQTT broker at %s:%s", host, broker_port)
+
+        self._api_wrapper = _HansApiWrapper.from_connection(
+            self.client_name,
+            session_id,
+            host,
+            port
+        )
+        mqttc = self._api_wrapper.mqttc
+
+        mqttc.on_connect = self._on_connect
+        mqttc.on_message = self._on_message
+
+        self._connected = True
+        mqttc.connect(host, broker_port)
+
+    def listen(self, *args, **kwargs):
+        """Listen to incoming MQTT requests and start the game loop thread"""
+
+        logger.info("Start listening for incoming MQTT packets")
+        self._loop_thread.start()
+        self._api_wrapper.mqttc.loop_forever(*args, **kwargs)
+        if self._loop_thread.exc_info is not None:
+            _raise_from_exc_info(self._loop_thread.exc_info)
+
+    def disconnect(self):
+        if not self._connected:
+            return
+
+        logger.info("Disconnecting from MQTT broker")
+        self._api_wrapper.disconnect()
+        if self._loop_thread.is_alive():
+            self._loop_thread.quit()
+
+        self._connected = False
+
+    def _on_connect(self, client, userdata, flags, rc):
+        mqttc = self._api_wrapper.mqttc
+
+        for topic in self._api_wrapper.subscribe_topics:
+            logger.debug("Subscribing to %s", topic)
+            mqttc.subscribe(topic)
+
+        self._api_wrapper.send_join_msg()
 
     def _on_message(self, client, userdata, msg):
         payload = json.loads(msg.payload)
@@ -234,23 +355,16 @@ class HansPlatform:
 
     def _handle_control_msgs(self, payload):
         if payload["type"] == "setup":
-            self._current_question = Question.from_hans_platform(self, payload)
+            self._current_question = self._api_wrapper.get_question_from_setup_msg(
+                payload)
             logger.info("The question has changed")
-
-            self.publish(
-                "control",
-                {
-                    "type": "ready",
-                    "participant": self.client_id,
-                    "session": self._session_id,
-                },
-            )
         elif payload["type"] == "start":
             if self._current_question is None:
                 raise CannotStartRoundException(
-                    "The question has not been set")
+                    "The question has not been set"
+                )
 
-            participants = self._all_participants()
+            participants = self._api_wrapper.get_all_participants()
             answer_positions = utils.calculate_answer_points(
                 len(self._current_question.answers), self._hexagon_radius
             )
@@ -260,29 +374,13 @@ class HansPlatform:
                               answer_positions)
 
             hans_client = HansClient(
-                self, PositionCodec(answer_positions)
+                self._api_wrapper, PositionCodec(answer_positions)
             )
             self._loop_thread.new_loop(new_round, hans_client)
             logger.info("The round has started")
         elif payload["type"] == "stop":
             self._loop_thread.stop()
             logger.info("The round has stopped")
-
-    def _all_participants(self) -> list[str]:
-        req = self.post(
-            f"session/{self._session_id}/allParticipants",
-            json={"user": "admin", "pass": "admin"},
-        )
-
-        return [Participant(user["username"], user["id"]) for user in req.json()]
-
-    def _set_offline(self):
-        self.post(f"session/{self._session_id}/participants/{self.client_id}")
-        self.publish("control", {
-            "type": "leave",
-            "participant": self.client_id,
-            "session": self._session_id
-        })
 
     def __enter__(self):
         return self
