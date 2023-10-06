@@ -34,7 +34,7 @@ class Oscillator(Loop):
         self.angle += self.angular_velocity * delta
     
     def render(self, sync_ratio: float):
-        position = self.radius * np.array([np.sin(self.angle), np.cos(self.angle)])
+        position = self.radius * np.array([np.cos(self.angle), np.cos(self.angle)])
         self.client.send_position(position)
 
 
