@@ -356,7 +356,9 @@ class HansPlatform:
     def _handle_control_msgs(self, payload):
         if payload["type"] == "setup":
             self._current_question = self._api_wrapper.get_question_from_setup_msg(
-                payload)
+                payload
+            )
+            self._api_wrapper.send_ready_msg()
             logger.info("The question has changed")
         elif payload["type"] == "start":
             if self._current_question is None:
