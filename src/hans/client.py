@@ -78,8 +78,10 @@ class HansClient:
         self._api_wrapper.publish(
             "updates",
             {
-                "data": {"position": list(position)},
-                "timeStamp": datetime.now().astimezone(timezone.utc).isoformat(),
+                "data": {
+                    "position": list(position),
+                    "timeStamp": datetime.now().astimezone(timezone.utc).isoformat(),
+                },
             },
         )
 
