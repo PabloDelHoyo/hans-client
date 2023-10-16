@@ -183,10 +183,7 @@ class _HansApiWrapper:
         if self._mqttc.is_connected:
             self._mqttc.disconnect()
 
-    def get_question_from_setup_msg(self, setup_msg) -> Question:
-        collection_id = setup_msg["collection_id"]
-        question_id = setup_msg["question_id"]
-
+    def get_question_from_id(self, collection_id, question_id):
         # TODO: handle possible errors (timeout or missing json)
         response = self.get(f"question/{collection_id}/{question_id}")
         data = response.json()
@@ -263,6 +260,10 @@ class _HansApiWrapper:
         return self._client_id
 
     @property
+    def session_id(self) -> int:
+        return self._session_id
+
+    @property
     def subscribe_topics(self) -> list[str]:
         return self._subscribe_topics
 
@@ -336,6 +337,11 @@ class HansPlatform:
 
         self._api_wrapper.send_join_msg()
 
+        # set the question once the bot has connected to the mqtt broker
+        res = self._api_wrapper.get(
+            f"session/{self._api_wrapper.session_id}").json()
+        self._set_current_question(res["collection_id"], res["question_id"])
+
     def _on_message(self, client, userdata, msg):
         payload = json.loads(msg.payload)
 
@@ -357,11 +363,8 @@ class HansPlatform:
 
     def _handle_control_msgs(self, payload):
         if payload["type"] == "setup":
-            self._current_question = self._api_wrapper.get_question_from_setup_msg(
-                payload
-            )
-            self._api_wrapper.send_ready_msg()
-            logger.info("The question has changed")
+            self._set_current_question(
+                payload["collection_id"], payload["question_id"])
         elif payload["type"] == "start":
             if self._current_question is None:
                 raise CannotStartRoundException(
@@ -385,6 +388,13 @@ class HansPlatform:
         elif payload["type"] == "stop":
             self._loop_thread.stop()
             logger.info("The round has stopped")
+
+    def _set_current_question(self, collection_id, question_id):
+        self._current_question = self._api_wrapper.get_question_from_id(
+            collection_id, question_id
+        )
+        self._api_wrapper.send_ready_msg()
+        logger.info("The question has changed")
 
     def __enter__(self):
         return self
