@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
 NAME = "Oscillator"
 
-HOST = "127.0.0.1"
+HOST = "52.214.15.30"
 API_PORT = 3000
 MQTT_PORT = 9001
 
@@ -34,7 +34,7 @@ class Oscillator(Loop):
         self.angle += self.angular_velocity * delta
     
     def render(self, sync_ratio: float):
-        position = self.radius * np.array([np.cos(self.angle), np.cos(self.angle)])
+        position = self.radius * np.array([np.cos(self.angle), np.sin(self.angle)])
         self.client.send_position(position)
 
 
