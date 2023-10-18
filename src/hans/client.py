@@ -228,7 +228,7 @@ class _HansApiWrapper:
 
         payload = json.dumps(payload)
         logger.debug("Publishing to topic '%s' with payload '%s'",
-                     topic, payload)
+                     send_topic, payload)
         self._mqttc.publish(send_topic, payload=payload)
 
     def send_join_msg(self):
