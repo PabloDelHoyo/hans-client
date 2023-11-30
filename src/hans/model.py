@@ -31,3 +31,4 @@ class Round:
     duration: int
     participants: list[Participant]
     answer_positions: np.ndarray  # Shape: (len(question.answers), 2)
+    radius: float

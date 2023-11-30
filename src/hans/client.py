@@ -378,7 +378,7 @@ class HansPlatform:
 
             new_round = Round(self._current_question,
                               payload["duration"], participants,
-                              answer_positions)
+                              answer_positions, self._hexagon_radius)
 
             hans_client = HansClient(
                 self._api_wrapper, PositionCodec(answer_positions)
