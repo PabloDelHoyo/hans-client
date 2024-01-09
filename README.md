@@ -20,15 +20,20 @@ The structure of a client is very similar to the one followed by a game loop. Al
 
 This method is called every time a new round starts (when the participant start to answer by moving their square). It receives as many arguments as the creator of the subclass wants.
 
-* `update(snapshot: StateSnapshot, delta: float)`.
+* `fixed_update(snapshot: StateSnapshot, delta: float, sync_ration: float)`.
 
-This method is called with a fixed `delta`. `delta` is the number of seconds which have passed since the last call to it. In the future, to avoid "the spiral of hell", the number of times this method is called in a second may decrease in case a lot of work is being done for a period of time. This will have the effect of slowing down the simulation but at least the frame time (number of seconds the render method is called) will stop increasing and increasing
+This method is called with a fixed `delta`. `delta` is the number of seconds which have passed since the last call to it. To avoid running into the "spiral of hell", the number
+of fixed updates per seconds is upper bounded. This will have the effect of slowing down the simulation but at least the frame time (number of seconds the render method is called) will stop increasing and increasing.
 
-This method is meant to be used for the calculation of the position where the agent will be.
 
-* `render(sync_ratio: float)`
+`sync_ratio` is a quantity which measures how desynchronized `update()` is from
+`fixed_update()`. In real games, it used to take into account the fact that rendering
+and updating might happen at different rates. For this particular application, it is
+not probably useful.
 
-This method is not guaranteed to be called at the same rate. That will depend on the work done in the update method. `sync_ratio` is a quantity associated to the way `update` and `render` are called at different rates. I cannot think of a reason to use it right now, so it can be safely ignored.
+* `update(snaphsot, StateSnapshot, delta: float)`
+
+This method is not guaranteed to be called at the same rate. That will depend on the work done in it. `sync_ratio` is a quantity associated to the way `update` and `render` are called at different rates. I cannot think of a reason to use it right now, so it can be safely ignored.
 
 The main purpose of `render` is sending the position to the server.
 
@@ -49,13 +54,17 @@ class AgentLogic(Loop):
         # ...
         self.position = np.zeros(2)
     
-    def update(self, snapshot: StateSnapshot, delta: float):
+    def fixed_update(self, snapshot: StateSnapshot, delta: float, sync_ratio: float):
+        # calculations which require a fixed timestep to be reliable
         # update position using snapshot, self.round and delta
     
-    def render(self, sync_ratio: float):
-        # Most of the time, you will do the following
+    def update(self, snapshot: StateSnapshot, delta: float):
+        # this method will be tried to be called at fix rate but that is not guaranteed.
+        # It can be used to send the position
+        ...
+
         self.client.send_position(self.position)
-    
+
     def close(self):
         # last of piece of code executed 
 ```
