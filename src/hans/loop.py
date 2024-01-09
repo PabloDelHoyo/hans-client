@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 
 class Loop:
-    """ All the logic to control a client must be included in a subclass
+    """All the logic to control a client must be included in a subclass
     inheriting from this one. It is not necessary to override the constructor
     """
 
@@ -41,21 +41,23 @@ class Loop:
         self.client = client
 
     def setup(self, **kwargs):
-        """ This is where all initialization code should go. Positional arguments
+        """This is where all initialization code should go. Positional arguments
         are not allowed"""
 
-    def render(self, sync_ratio: float):
-        """This is where all code in which message packets are sent must go.
-        Right now, those packets only contain position information.
+    def update(self, snapshot: StateSnapshot, delta: float):
+        """This method will be tried to be called at a fixed rate determined by FPS
+        but that is not guaranteed.  That depends on the work being done by the method and
+        external factors like system load. Therefore, delta time will vary but it will
+        never exceed max_delta_time
 
-        The rate at which this method is called may vary. That will depend on the work
-        done by self.udpate()
+        This is the recommended place to send the agent position.
         """
 
-    def update(self, snapshot: StateSnapshot, delta: float):
-        """All code related to the calculation of the next position.
-
+    def fixed_update(self, snapshot: StateSnapshot, delta: float, sync_ratio: float):
+        """This method will be called at a fixed rate, determined by TPS.
         The rate at which this method is called is guaranteed to be constant so delta is fixed.
+        This method is very useful for calculation which require a fixed timestep to work
+        properly.
         """
 
     def close(self):
@@ -64,17 +66,45 @@ class Loop:
 
 
 class LoopThread(threading.Thread):
-    def __init__(self, loop_cls, fps=20, tps=20, loop_kwargs={}):
+    """This represents the thread which will run the game loop
+
+    loop_cls: Class inhereting from Loop whose method will be called according to the logic of a game
+    loop
+    fps: maximum number of times the method Loop.update() will be called in a second
+    tps: number of time Loop.fixed_update() will be called in a second
+    max_delta_time: upper bound for deltatime. This has the following advantages
+      (https://docs.unity3d.com/ScriptReference/Time-maximumDeltaTime.html)
+        - The number of fixed updates is bounded, which is necessary in those situations where
+        there are hitches and we may fall into the spiral of hell
+        - You have more guarantees over the varying delta time
+
+        max_delta_time will always be as large as the time it takes a fixed update to run. If it
+        were not the case, the upper bound would not longer be max_delta_time
+
+    """
+
+    def __init__(
+        self,
+        loop_cls: type[Loop],
+        fps=20,
+        tps=20,
+        max_delta_time=0.3333,
+        loop_kwargs={},
+    ):
         super().__init__()
 
         self.fps = fps
         self.tps = tps
+        self.max_delta_time = max_delta_time
 
         self._loop_cls = loop_cls
         self._loop_kwargs = loop_kwargs
 
-        self._max_frame_time = 1 / fps
-        self._delta = 1 / tps
+        self._frame_time = 1 / fps
+        self._fixed_delta = 1 / tps
+
+        # max_delta_time has to be as large as fixed delta
+        self._max_delta_time = max(max_delta_time, self._fixed_delta)
 
         # signals that the currently running loop must stop
         self._current_loop_quit = threading.Event()
@@ -118,15 +148,14 @@ class LoopThread(threading.Thread):
         """
 
         self._current_loop = self._loop_cls(
-            round=round, client=hans_client,
+            round=round,
+            client=hans_client,
         )
 
         self._current_loop.setup(**self._loop_kwargs)
 
-        participant_ids = [
-            participant.id for participant in round.participants]
-        self._current_state = State(
-            hans_client.pcodec, participant_ids, hans_client.id)
+        participant_ids = [participant.id for participant in round.participants]
+        self._current_state = State(hans_client.pcodec, participant_ids, hans_client.id)
 
         self._continue.set()
         self._current_loop_quit.clear()
@@ -157,24 +186,37 @@ class LoopThread(threading.Thread):
         accumulator = 0
 
         while not self._current_loop_quit.is_set():
+            # Calcuate the time the previous tick took
             new_time = time.monotonic()
             frame_time = new_time - current_time
             current_time = new_time
 
+            # Bound the time time it took to avoid "spiral of hell"
+            frame_time = min(frame_time, self._max_delta_time)
             accumulator += frame_time
-            # TODO: bound frame_time to avoid "the spiral of hell"
 
-            while accumulator >= self._delta and not self._current_loop_quit.is_set():
+            while (
+                accumulator >= self._fixed_delta
+                and not self._current_loop_quit.is_set()
+            ):
                 snapshot = self._current_state.get_snapshot()
-                self._current_loop.update(snapshot, self._delta)
-                accumulator -= self._delta
+                self._current_loop.fixed_update(
+                    snapshot, self._fixed_delta, accumulator / self._fixed_delta
+                )
+                accumulator -= self._fixed_delta
 
             if not self._current_loop_quit.is_set():
-                self._current_loop.render(accumulator / self._delta)
+                # We have to provide the actual time which have elapsed between update() and
+                # update(). For that, we need to take into account the time it took to call
+                # fixed_update()
+                snapshot = self._current_state.get_snapshot()
+                delta = frame_time + (time.monotonic() - current_time)
 
-            remaining_frame_time = self._max_frame_time - (
-                time.monotonic() - current_time
-            )
+                # Do not forget to bound again
+                delta = min(self._max_delta_time, delta)
+                self._current_loop.update(snapshot, delta)
+
+            remaining_frame_time = self._frame_time - (time.monotonic() - current_time)
             if remaining_frame_time > 0:
                 # We employ Event instead of time.sleep() because in that way,
                 # if stop() or quit() is called then this thread can exit as soon as
