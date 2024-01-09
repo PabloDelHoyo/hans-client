@@ -7,6 +7,8 @@ from hans import HansPlatform, Loop, LoopThread
 
 from typing import TYPE_CHECKING
 
+from hans.state import StateSnapshot
+
 if TYPE_CHECKING:
     from hans.state import StateSnapshot
 
@@ -16,9 +18,9 @@ HOST = "127.0.0.1"
 API_PORT = 3000
 MQTT_PORT = 9001
 
-class Follow(Loop):
 
-    def setup(self, lag, follow_idx = 0):
+class Follow(Loop):
+    def setup(self, lag, follow_idx=0):
         self.lag = lag
         self.follow_idx = follow_idx
 
@@ -38,18 +40,22 @@ class Follow(Loop):
 
         self.counter += delta
 
-    def render(self, sync_ratio: float):
         self.client.send_position(self.position)
 
+
 def main():
-    follow_thread = LoopThread(Follow, loop_kwargs={
-        "lag": 0.5,
-        "follow_idx": 0
-    })
+    follow_thread = LoopThread(
+        Follow,
+        loop_kwargs=dict(
+            lag=0.5,
+            follow_idx=0
+        )
+    )
 
     with HansPlatform(NAME, follow_thread) as platform:
         platform.connect(HOST, API_PORT, MQTT_PORT)
         platform.listen()
 
+
 if __name__ == "__main__":
-   main()
+    main()
