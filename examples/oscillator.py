@@ -13,11 +13,9 @@ if TYPE_CHECKING:
 
 NAME = "Oscillator"
 
-HOST = "52.214.15.30"
+HOST = "127.0.0.1"
 API_PORT = 3000
 MQTT_PORT = 9001
-
-import random, time
 
 class Oscillator(Loop):
     def setup(self, max_radius, radius_speed, period):

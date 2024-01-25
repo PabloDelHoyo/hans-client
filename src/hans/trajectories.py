@@ -51,7 +51,7 @@ class Trajectory:
     original_target: int
 
     @classmethod
-    def from_csv_file(cls, file_path) -> Trajectory:
+    def from_file(cls, file_path: str) -> Trajectory:
         with open(file_path) as f:
             original_target, trajectories_rows = f.read().strip().split("\n\n")
 
@@ -244,6 +244,10 @@ class MoveVertexTowardsTarget:
         # TODO: refactor this into a function
         mag = np.linalg.norm(disp)
 
+        # TODO: it seems that applying this transformation is worse than not applying it
+        # at all. The main problem is in those trajectories where you stop on a point for
+        # for a certain period of time. 
+        # The following line effectively removes the effect of it.
         transform.new_vertices[self.moving_vertex_idx] = self.target
 
         if mag > self.speed * delta:
@@ -290,6 +294,20 @@ class TrajectoryGenerator:
     ):
         """
         start: the point where the trajectory begins
+        end: the point where the trajectory ends
+        trajectory: the original trajectory which will be transformed to create a trajectory
+            from 'start' to 'end'
+        time_multiplier: the speed at which the trajectory will be replayed. For example,
+            if factor = 2, then the trajectory will be replayed twice as fast.
+        origin_speed_multiplier: factor by which the speed passed to MoveCenterTowardsOrigin
+            is multiplied. Specifically, the speed is equal to 
+            origin_speed_multiplier * s / trajectory.duration() 
+            where s is the distance from start and the origin (0, 0) 
+        target_speed_multiplier: factor by which the speed passed to MoveVertexTowardsTarget
+            is multiplied. specifically, the speed is equal to
+            target_speed_multiplier * s / trajectory.duration() 
+            where s is the distance from the closest vertex to the target point and the
+            target point. THIS CURRENTLY HAS NO EFFECT
         """
         closest_vertex = calculate_sector(end, self._vertices_pos)[0]
         transform = PointTransform.from_vertex_target(
