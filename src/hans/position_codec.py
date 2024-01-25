@@ -2,7 +2,6 @@ import numpy as np
 
 from . import utils
 
-
 class PositionCodec:
     """Useful to transform the position from and to the format which the
     server requires"""
