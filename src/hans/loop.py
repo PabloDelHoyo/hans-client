@@ -20,9 +20,10 @@ from __future__ import annotations
 import threading
 import time
 import numpy as np
-from typing import Optional, Callable, TYPE_CHECKING
+from typing import Optional, Callable, Coroutine, TYPE_CHECKING
 
 from .state import State
+from .coro import Scheduler, WaitTask, LoopCoroutine
 
 if TYPE_CHECKING:
     from sys import OptExcInfo
@@ -36,9 +37,16 @@ class Loop:
     inheriting from this one. It is not necessary to override the constructor
     """
 
-    def __init__(self, round: Round, client: HansClient):
+    def __init__(self, round: Round, client: HansClient, coro_scheduler: Scheduler):
         self.round = round
         self.client = client
+
+        self._coro_scheduler = coro_scheduler
+
+    def start_coroutine(self, coro: LoopCoroutine, after: float = 0):
+        """Schedules a coroutine after 'after' seconds"""
+
+        self._coro_scheduler.add_task(WaitTask.from_sleep_time(coro, after))
 
     def setup(self, **kwargs):
         """This is where all initialization code should go. Positional arguments
@@ -126,6 +134,8 @@ class LoopThread(threading.Thread):
         # Called when an exception happens
         self._exc_handler: Optional[Callable[[None], None]] = None
 
+        self._coro_scheduler = Scheduler()
+
         # Stores the exception info in case one is reaised
         self.exc_info: OptExcInfo = None
 
@@ -148,8 +158,7 @@ class LoopThread(threading.Thread):
         """
 
         self._current_loop = self._loop_cls(
-            round=round,
-            client=hans_client,
+            round=round, client=hans_client, coro_scheduler=self._coro_scheduler
         )
 
         self._current_loop.setup(**self._loop_kwargs)
@@ -215,6 +224,10 @@ class LoopThread(threading.Thread):
                 # Do not forget to bound again
                 delta = min(self._max_delta_time, delta)
                 self._current_loop.update(snapshot, delta)
+
+            # Unity schedules a coroutine other than "yield WaitForEndOfFrame" after
+            # a call to update. Here we do the same
+            self._coro_scheduler.step()
 
             remaining_frame_time = self._frame_time - (time.monotonic() - current_time)
             if remaining_frame_time > 0:
