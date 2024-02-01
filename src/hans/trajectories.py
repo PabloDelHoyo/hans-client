@@ -7,8 +7,10 @@ import numpy as np
 
 from . import utils
 
+
 def lerp(v0: np.ndarray, v1: np.ndarray, t):
     return (1 - t) * v0 + t * v1
+
 
 def calculate_sector(point: np.ndarray, vertices: np.ndarray) -> np.ndarray:
     """Returns the indices of the vertices which delimit the sector where the point is located"""
@@ -25,10 +27,12 @@ def calculate_sector(point: np.ndarray, vertices: np.ndarray) -> np.ndarray:
 
     return np.array([closest_idx, second_closest_idx])
 
+
 def get_factor_from_time(time: float, trajectory: Trajectory):
     """Calculates the factor that must be given to Replayer (and as a consequence
-    to TrajectoryGenerator) so that it takes 'time' seconds to replay 'trajectory' """
-    return trajectory.duration() / time
+    to TrajectoryGenerator) so that it takes 'time' seconds to replay 'trajectory'"""
+    return trajectory.original_duration() / time
+
 
 @dataclass
 class TrajectoryPoint:
@@ -40,7 +44,7 @@ class TrajectoryPoint:
     norm_position: np.ndarray
 
     @classmethod
-    def from_csv_row(cls, row):
+    def from_row(cls, row):
         row = row.split(",")
         return cls(float(row[0]), np.array(list(map(float, row[1:]))))
 
@@ -60,23 +64,26 @@ class Trajectory:
 
         return cls(
             [
-                TrajectoryPoint.from_csv_row(trajectory_row)
+                TrajectoryPoint.from_row(trajectory_row)
                 for trajectory_row in trajectories_rows
             ],
             original_target,
         )
 
-    def duration(self) -> float:
-        """Return the time it took to record this trajectory"""
-        return (
-            self.points[-1].timestamp - self.points[0].timestamp
-        )
+    def original_duration(self) -> float:
+        """Return the time it took to record this trajectory. It is named this way in order
+        to avoid confusion with the duration it takes for a Replayer to replay a trajectory.
+        """
+
+        return self.points[-1].timestamp - self.points[0].timestamp
+
 
 class PointTransformUpdater(Protocol):
     """Represent the transformation applied to a PointTransform"""
 
     def update(self, transform: PointTransform, delta: float):
         ...
+
 
 class PointTransform:
     """Represents the transformation applied to a point"""
@@ -148,7 +155,7 @@ class Replayer:
         """
         trajectory: the trajectory which will be applied
         transform: the transformation that has to be applied to the point before being
-            return 
+            return
         time_multiplier: the speed at which the trajectory will be replayed. For example,
             if factor = 2, then the trajectory will be replayed twice as fast.
         """
@@ -163,7 +170,7 @@ class Replayer:
     def step(self, delta: float) -> np.ndarray:
         """Returns the appropiate point from the trajectory. Linear interpolation
         is applied to avoid stuttering movement in case the speed at which the trajectory
-        is replayed """
+        is replayed"""
 
         while (
             not self.has_finished()
@@ -204,6 +211,7 @@ class Replayer:
     def _advance(self):
         self._idx += 1
 
+
 class MoveCenterTowardsOrigin:
     """Updates a PointTransform so that its new center moves at a constant speed
     to the true origin"""
@@ -216,7 +224,6 @@ class MoveCenterTowardsOrigin:
         # if statement because the stop condition is not deterministic. However,
         # since in a sensible game loop delta is upper bound, we have guarantees
         # on that condition
-
 
         # TODO: refactor this into a function
         mag = np.linalg.norm(transform.center_pos)
@@ -234,7 +241,7 @@ class MoveVertexTowardsTarget:
     def __init__(self, speed: float, target: np.ndarray, moving_vertex_idx: int):
         self.speed = speed
         self.target = target
-        
+
         # The vertex which will be moved towards the target
         self.moving_vertex_idx = moving_vertex_idx
 
@@ -246,26 +253,38 @@ class MoveVertexTowardsTarget:
 
         # TODO: it seems that applying this transformation is worse than not applying it
         # at all. The main problem is in those trajectories where you stop on a point for
-        # for a certain period of time. 
+        # for a certain period of time.
         # The following line effectively removes the effect of it.
         transform.new_vertices[self.moving_vertex_idx] = self.target
 
         if mag > self.speed * delta:
             direction = disp / mag
-            transform.new_vertices[self.moving_vertex_idx] += direction * self.speed * delta
+            transform.new_vertices[self.moving_vertex_idx] += (
+                direction * self.speed * delta
+            )
         else:
             transform.new_vertices[self.moving_vertex_idx] = self.target
+
+
+@dataclass
+class Duration:
+    time: float
+
+
+@dataclass
+class TimeMultiplier:
+    multiplier: float
+
+
+DurationOption = Duration | TimeMultiplier
+
 
 class TrajectoryGenerator:
     """This class is in charge of generating a trajectory between
     two arbitrary points inside the hexagon based on recorded trajectories
     which start in the origin and end up in one vertex"""
 
-    def __init__(
-        self,
-        radius: float,
-        vertices_pos: np.ndarray
-    ):
+    def __init__(self, radius: float, vertices_pos: np.ndarray):
         """
         radius: the radius of the polygon. It is not obtained directly from 'vertices_pos'
             because, since truncation is applied, each vertex is not at the same distance
@@ -274,38 +293,41 @@ class TrajectoryGenerator:
         vertices_pos: A (N, 2) numpy array containing containing the vertices of the
         polygon. Since we are dealing with an hexagon, N=6
         """
-        
+
         self._radius = radius
         self._vertices_pos = vertices_pos
 
         self._replayer: Replayer | None = None
-        
+
         # The transformations applied to PositionTransform
         self._transform_updaters: list[PointTransformUpdater] = []
-    
+
     def set_trajectory(
         self,
         start: np.ndarray,
         end: np.ndarray,
         trajectory: Trajectory,
-        time_multiplier=1,
+        duration: DurationOption | float = 1,
         origin_speed_multiplier=1,
-        target_speed_multiplier=1
+        target_speed_multiplier=1,
     ):
         """
         start: the point where the trajectory begins
         end: the point where the trajectory ends
         trajectory: the original trajectory which will be transformed to create a trajectory
             from 'start' to 'end'
-        time_multiplier: the speed at which the trajectory will be replayed. For example,
-            if factor = 2, then the trajectory will be replayed twice as fast.
+        duration: if a numerical value is passed (int or float), then that value is
+            the time TrajectoryGenerator will take to replay those trajectories. It is also
+            possible to pass a time multiplier. For example, if the time multiplier is 2, then the
+            trajectory will be replayed twice as fast. In order to pass a time multiplier, that
+            value must be wrapped in a TimeMultiplier (i.e duration=TimeMultiplier(2))
         origin_speed_multiplier: factor by which the speed passed to MoveCenterTowardsOrigin
-            is multiplied. Specifically, the speed is equal to 
-            origin_speed_multiplier * s / trajectory.duration() 
-            where s is the distance from start and the origin (0, 0) 
+            is multiplied. Specifically, the speed is equal to
+            origin_speed_multiplier * s / trajectory.original_duration()
+            where s is the distance from start and the origin (0, 0)
         target_speed_multiplier: factor by which the speed passed to MoveVertexTowardsTarget
             is multiplied. specifically, the speed is equal to
-            target_speed_multiplier * s / trajectory.duration() 
+            target_speed_multiplier * s / trajectory.original_duration()
             where s is the distance from the closest vertex to the target point and the
             target point. THIS CURRENTLY HAS NO EFFECT
         """
@@ -315,8 +337,20 @@ class TrajectoryGenerator:
             trajectory.original_target,
             self._vertices_pos,
             start,
-            self._radius
+            self._radius,
         )
+
+        match duration:
+            case Duration(time):
+                time_multiplier = get_factor_from_time(time, trajectory)
+            case TimeMultiplier(multiplier):
+                time_multiplier = multiplier
+            case time if isinstance(time, (int, float)):
+                time_multiplier = get_factor_from_time(time, trajectory)
+            case invalid:
+                raise ValueError(
+                    f"{invalid} of type {type(invalid)} is not a valid value for the duration"
+                )
 
         self._replayer = Replayer(trajectory, transform, time_multiplier)
 
@@ -325,23 +359,32 @@ class TrajectoryGenerator:
         )
 
         towards_target_speed = (
-            target_speed_multiplier * np.linalg.norm(end - closest_vertex) / self._replayer.duration()
+            target_speed_multiplier
+            * np.linalg.norm(end - closest_vertex)
+            / self._replayer.duration()
         )
 
         self._transform_updaters = [
             MoveCenterTowardsOrigin(towards_origin_speed),
-            MoveVertexTowardsTarget(towards_target_speed, end, closest_vertex)
+            MoveVertexTowardsTarget(towards_target_speed, end, closest_vertex),
         ]
-    
+
     def step(self, delta: float) -> np.ndarray:
         point = self._replayer.step(delta)
         for transform_updater in self._transform_updaters:
             transform_updater.update(self._replayer.transform, delta)
 
         return point
-    
+
+    def replayer_duration(self) -> float:
+        """Returns the duration the TrajectoryGenerator is going to take to replay
+        the trajectory after considering the time multiplier which is passed to the Replayer
+        """
+
+        return self._replayer.duration()
+
     def current_trajectory(self) -> Trajectory:
         return self._replayer._trajectory
-    
+
     def has_finished(self) -> bool:
         return self._replayer is not None and self._replayer.has_finished()
