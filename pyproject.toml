@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hans-client"
-version = "5.1.0"
+version = "5.2.0"
 authors = [
   { name="Pablo del Hoyo Abad", email="pablo.hoyo@alu.uclm.es" },
 ]
