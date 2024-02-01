@@ -22,8 +22,8 @@ MQTT_PORT = 9001
 # their paths. You can also generate one path and write the same
 # path for both constants
 
-FIRST_TRAJECTORY_PATH = "path/to/first_trajectory.csv"
-SECOND_TRAJECTORY_PATH = "path/to/second_trajectory.csv"
+FIRST_TRAJECTORY_PATH = "path/to/first_trajectory.txt"
+SECOND_TRAJECTORY_PATH = "path/to/second_trajectory.txt"
 
 
 def get_default_handler():
@@ -77,9 +77,7 @@ class TrajectoryReplayer(Loop):
             start=self.position,
             end=np.array([-50, -100]),
             trajectory=first_trajectory,
-            time_multiplier=hans.trajectories.get_factor_from_time(
-                duration, first_trajectory
-            ),
+            duration=duration,
         )
 
         self.duration = duration
@@ -93,13 +91,12 @@ class TrajectoryReplayer(Loop):
         if not self.has_changed and self.counter > self.change_after_seconds:
             self.point_generator.set_trajectory(
                 start=self.position,
-                end=np.array([-200, 50]),
+                end=np.array([200, 50]),
                 trajectory=self.second_trajectory,
-                time_multiplier=hans.trajectories.get_factor_from_time(
-                    self.duration, self.second_trajectory
-                ),
+                duration=self.duration,
             )
             self.has_changed = True
+            self.counter = 0
 
         self.position = self.point_generator.step(delta)
         self.counter += delta
@@ -116,8 +113,8 @@ def main():
         loop_kwargs=dict(
             first_trajectory=first_trajectory,
             second_trajectory=second_trajectory,
-            duration=3,
-            change_after_seconds=5,
+            duration=5,
+            change_after_seconds=7,
         ),
     )
 

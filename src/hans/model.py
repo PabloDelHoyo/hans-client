@@ -2,13 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from PIL import Image
-from io import BytesIO
 from typing import TYPE_CHECKING
 
 
 if TYPE_CHECKING:
     import numpy as np
-    from .client import HansPlatform
 
 
 @dataclass
