@@ -4,6 +4,7 @@ import logging
 from typing import TYPE_CHECKING
 
 import numpy as np
+import time
 
 from hans import HansPlatform, Loop, LoopThread
 import hans.trajectories
@@ -15,7 +16,7 @@ if TYPE_CHECKING:
 
 NAME = "Trajectory Replayer Async"
 
-HOST = ""
+HOST = "127.0.0.1"
 API_PORT = 3000
 MQTT_PORT = 9001
 
@@ -23,8 +24,8 @@ MQTT_PORT = 9001
 # their paths. You can also generate one path and write the same
 # path for both constants
 
-FIRST_TRAJECTORY_PATH = "first.txt"
-SECOND_TRAJECTORY_PATH = "second.txt"
+FIRST_TRAJECTORY_PATH = "path/to/first.txt"
+SECOND_TRAJECTORY_PATH = "path/to/second.txt"
 
 
 def get_default_handler():
@@ -58,7 +59,7 @@ class TrajectoryReplayer(Loop):
         first_trajectory: Trajectory,
         second_trajectory: Trajectory,
         duration: float,
-        change_after_seconds: float,
+        stop_time: float,
     ):
         """
         first_trajectory: the first trajectory which will be followed
@@ -78,15 +79,13 @@ class TrajectoryReplayer(Loop):
             start=self.position,
             end=np.array([-50, -100]),
             trajectory=first_trajectory,
-            time_multiplier=hans.trajectories.get_factor_from_time(
-                duration, first_trajectory
-            ),
+            duration=duration,
         )
 
         # Schedules the coroutine so that it is runned after 'change_after_seconds'
         self.start_coroutine(
-            self.change_direction(change_after_seconds, second_trajectory, duration),
-            change_after_seconds,
+            self.change_direction(second_trajectory, duration),
+            self.point_generator.replayer_duration() + stop_time
         )
 
         self.first_trajectory = first_trajectory
@@ -95,27 +94,23 @@ class TrajectoryReplayer(Loop):
         self.position = self.point_generator.step(delta)
         self.client.send_position(self.position)
 
-    async def change_direction(self, change_after, second_trajectory, duration):
+    async def change_direction(self, second_trajectory, duration):
         self.point_generator.set_trajectory(
             start=self.position,
             end=np.array([-200, 50]),
             trajectory=second_trajectory,
-            time_multiplier=hans.trajectories.get_factor_from_time(
-                duration, second_trajectory
-            ),
+            duration=duration
         )
 
-        # Wait half the time we waited before and change the trajectory
-        # and the destination
-        await hans.coro.sleep(10)
+        # Wait time it takes the point generator to replay the trajectory
+        # plus three additional seconds. In those seconds, the agent won't move
+        await hans.coro.sleep(self.point_generator.replayer_duration() + 3)
 
         self.point_generator.set_trajectory(
             start=self.position,
             end=np.array([-50, -100.0]),
             trajectory=self.first_trajectory,
-            time_multiplier=hans.trajectories.get_factor_from_time(
-                duration, self.first_trajectory
-            ),
+            duration=duration,
         )
 
 
@@ -123,13 +118,15 @@ def main():
     first_trajectory = Trajectory.from_file(FIRST_TRAJECTORY_PATH)
     second_trajectory = Trajectory.from_file(SECOND_TRAJECTORY_PATH)
 
+    # The agent spends 16 seconds before it definitely stops. That duration is
+    # independent from the time it took to record the trajectories
     trajectory_replayer_loop = LoopThread(
         TrajectoryReplayer,
         loop_kwargs=dict(
             first_trajectory=first_trajectory,
             second_trajectory=second_trajectory,
             duration=4,
-            change_after_seconds=5,
+            stop_time=1,
         ),
     )
 
