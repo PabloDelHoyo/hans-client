@@ -103,7 +103,7 @@ import hans.coro
 class TestAgent(Loop):
 
     def setup():
-        self.start_coroutine(self.my_coroutine/())
+        self.start_coroutine(self.my_coroutine())
     
     async def my_coroutine(self):
         # Some code
