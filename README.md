@@ -89,6 +89,40 @@ with HansPlatform("agent name", loop) as platform:
     platform.listen()
 ```
 
+## Coroutines
+This feature is inspired by the coroutines feature that Unity [has](https://docs.unity3d.com/Manual/Coroutines.html). They allow you to
+spread a task across several calls of `update()`. This is possible because
+the task context is saved without you having to explicitily do it. You just
+have to put the code inside a coroutine function (`async def `) and use `await` to yield the execution so that the next piece of code is executed after a call of `update()`. You would
+normally use coroutines in this way:
+
+```python
+from hans import Loop
+import hans.coro
+
+class TestAgent(Loop):
+
+    def setup():
+        self.start_coroutine(self.my_coroutine/())
+    
+    async def my_coroutine(self):
+        # Some code
+
+        # Wait at least five seconds
+        await hans.coro.sleep(5)
+
+        # More code
+
+```
+
+Keep in mind that couroutines have some overhead so if you have something like the following
+```python
+while True:
+    # some code
+    await hans.coro.sleep(0)
+```
+consider moving that piece of code to `update()` or `fixed_update()`
+
 ## Logging
 `hans-client` uses the built-in `logging` module to log messages. By default, it does not send the logs anywhere. In order to do that, you must configure it. All used loggers have as parent a logger called `hans`. For a very basic configuration, you can do the following.
 ```python
