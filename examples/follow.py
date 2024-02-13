@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import deque
 
 import numpy as np
-from hans import HansPlatform, Loop, LoopThread
+from hans import HansPlatform, Agent, AgentManager
 
 from typing import TYPE_CHECKING
 
@@ -19,7 +19,8 @@ API_PORT = 3000
 MQTT_PORT = 9001
 
 
-class Follow(Loop):
+class Follow(Agent):
+
     def setup(self, lag, follow_idx=0):
         self.lag = lag
         self.follow_idx = follow_idx
@@ -44,15 +45,15 @@ class Follow(Loop):
 
 
 def main():
-    follow_thread = LoopThread(
+    follow_manager = AgentManager(
         Follow,
-        loop_kwargs=dict(
+        agent_kwargs=dict(
             lag=0.5,
             follow_idx=0
         )
     )
 
-    with HansPlatform(NAME, follow_thread) as platform:
+    with HansPlatform(NAME, follow_manager) as platform:
         platform.connect(HOST, API_PORT, MQTT_PORT)
         platform.listen()
 
