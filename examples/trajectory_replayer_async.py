@@ -1,18 +1,14 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
 import numpy as np
-import time
 
-from hans import HansPlatform, Loop, LoopThread
+from hans import HansPlatform, Agent, AgentManager
 import hans.trajectories
 import hans.coro
 from hans.trajectories import Trajectory, TrajectoryGenerator
 
-if TYPE_CHECKING:
-    from hans.state import StateSnapshot
 
 NAME = "Trajectory Replayer Async"
 
@@ -53,7 +49,7 @@ configure_logger(
 )
 
 
-class TrajectoryReplayer(Loop):
+class TrajectoryReplayer(Agent):
     def setup(
         self,
         first_trajectory: Trajectory,
@@ -90,7 +86,7 @@ class TrajectoryReplayer(Loop):
 
         self.first_trajectory = first_trajectory
 
-    def update(self, snapshot: StateSnapshot, delta: float):
+    def update(self, delta: float):
         self.position = self.point_generator.step(delta)
         self.client.send_position(self.position)
 
@@ -120,9 +116,9 @@ def main():
 
     # The agent spends 16 seconds before it definitely stops. That duration is
     # independent from the time it took to record the trajectories
-    trajectory_replayer_loop = LoopThread(
+    trajectory_replayer_loop = AgentManager(
         TrajectoryReplayer,
-        loop_kwargs=dict(
+        agent_kwargs=dict(
             first_trajectory=first_trajectory,
             second_trajectory=second_trajectory,
             duration=4,

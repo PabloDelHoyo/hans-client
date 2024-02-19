@@ -2,13 +2,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from hans import HansPlatform, Loop, LoopThread
+from hans import HansPlatform, Agent, AgentManager
 import hans.utils
 
-from typing import Optional, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from hans.state import StateSnapshot
+from typing import Optional
 
 NAME = "MoveToPopular"
 
@@ -17,7 +14,8 @@ API_PORT = 3000
 MQTT_PORT = 9001
 
 
-class MoveToMostPopular(Loop):
+class MoveToMostPopular(Agent):
+
     def setup(self, speed, max_dist_popular, target_min_dist):
         self.speed = speed
         self.max_dist_popular = max_dist_popular
@@ -25,8 +23,8 @@ class MoveToMostPopular(Loop):
 
         self.position = np.zeros(2)
 
-    def update(self, snapshot: StateSnapshot, delta: float):
-        popular_answer = self._get_popular_answer(snapshot.other_positions, 1)
+    def update(self, delta: float):
+        popular_answer = self._get_popular_answer(self.snapshot.other_positions, 1)
         if popular_answer is None:
             return
 
@@ -73,9 +71,9 @@ class MoveToMostPopular(Loop):
 
 
 def main():
-    move_to_popular_thread = LoopThread(
+    move_to_popular_thread = AgentManager(
         MoveToMostPopular,
-        loop_kwargs=dict(
+        agent_kwargs=dict(
             speed=150,
             max_dist_popular=230,
             target_min_dist=30
@@ -85,3 +83,6 @@ def main():
     with HansPlatform(NAME, move_to_popular_thread) as platform:
         platform.connect(HOST, API_PORT, MQTT_PORT)
         platform.listen()
+
+if __name__ == "__main__":
+    main()
