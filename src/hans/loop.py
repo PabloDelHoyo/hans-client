@@ -34,13 +34,8 @@ if TYPE_CHECKING:
 
 class Loop:
 
-    def __init__(self, coro_scheduler: Scheduler):
-        self._coro_scheduler = coro_scheduler
-
     def start_coroutine(self, coro: LoopCoroutine, after: float = 0):
         """Schedules a coroutine after 'after' seconds"""
-
-        self._coro_scheduler.add_task(WaitTask.from_sleep_time(coro, after))
 
     def setup(self, **kwargs):
         """This is where all initialization code should go. Positional arguments
@@ -66,16 +61,32 @@ class Loop:
         """Called when a question finishes. It is guaranted no update() nor fixed_update() calls
         will happen after this method is called"""
 
-class Agent(Loop):
+
+class _LoopWithScheduler(Loop):
+
+    def __init__(self, coro_scheduler: Scheduler):
+        self._coro_scheduler = coro_scheduler
+
+    def start_coroutine(self, coro: LoopCoroutine, after: float = 0):
+        self._coro_scheduler.add_task(WaitTask.from_sleep_time(coro, after))
+
+
+class Agent(_LoopWithScheduler):
     """All the logic to control a client must be included in a subclass
     inheriting from this one. It is not necessary to override the constructor
     """
 
-    def __init__(self, coro_scheduler: Scheduler, round: Round, client: HansClient):
+    def __init__(self, round: Round, client: HansClient, coro_scheduler: Scheduler):
         super().__init__(coro_scheduler)
 
         self.round = round
         self.client = client
+
+        # TODO: even though snapshot is None when the agent is created, when the client
+        # uses it it is not possible that it has that value. If the user were using a typechecker
+        # it will complain that this variable may be None, which from his perspective it won't be
+        # possible if the calling code is working properly.
+        # Think on some way of avoiding that inconvenient to the user.
         self.snapshot: StateSnapshot | None = None
 
 
@@ -84,10 +95,11 @@ class _AgentWrapper(Loop):
     update() or fixed_update() is called"""
 
     def __init__(self, agent: Agent, state: State):
-        super().__init__(agent._coro_scheduler)
-
         self._agent = agent
         self.state = state
+
+    def start_coroutine(self, coro: LoopCoroutine, after: float = 0):
+        self._agent.start_coroutine(coro, after)
 
     def setup(self, **kwargs):
         self._agent.setup(**kwargs)
@@ -125,6 +137,7 @@ class GameLoop:
     def __init__(
         self,
         loop: Loop,
+        coro_scheduler: Scheduler,
         fps=20,
         tps=20,
         max_delta_time=0.33333,
@@ -138,9 +151,7 @@ class GameLoop:
         self.max_delta_time = max(max_delta_time, self.fixed_delta)
 
         self._loop = loop
-
-        # TODO: why not to create a Scheduler directly here????
-        self._coro_scheduler = loop._coro_scheduler
+        self._coro_scheduler = coro_scheduler
 
         # Signals that the game loop must finish
         self._quit = threading.Event()
@@ -187,7 +198,8 @@ class GameLoop:
             # a call to update. Here we do the same
             self._coro_scheduler.step()
 
-            remaining_frame_time = self.frame_time - (time.monotonic() - current_time)
+            remaining_frame_time = self.frame_time - \
+                (time.monotonic() - current_time)
             if remaining_frame_time > 0:
                 # We employ Event instead of time.sleep() because in that way,
                 # if stop() or quit() is called then this thread can exit as soon as
@@ -199,7 +211,7 @@ class GameLoop:
     def has_finished(self):
         return self._completely_finished.is_set()
 
-    def quit(self, timeout:float | None=None):
+    def quit(self, timeout: float | None = None):
         """Quits the game loop. If it is called several times, only the first call will
         call Loop.close(). Timeout is the maximum number of seconds to wait before this
         method returns. If it None, it does not return until the loop has completely finished"""
@@ -212,6 +224,7 @@ class GameLoop:
         # Wait until the game loop has finished has completely finished
         self._completely_finished.wait(timeout)
         self._loop.close()
+
 
 class AgentManager(threading.Thread):
     """This class is in charge of running an agent when a session starts and stopping
@@ -242,18 +255,25 @@ class AgentManager(threading.Thread):
         # Stores the exception info in case one is reaised
         self.exc_info: OptExcInfo = None
 
-        self._coro_scheduler = Scheduler()
-
     def start_session(self, round: Round, hans_client: HansClient):
-        participant_ids = [participant.id for participant in round.participants]
+        participant_ids = [
+            participant.id for participant in round.participants]
         state = State(hans_client.pcodec, participant_ids, hans_client.id)
 
+        coro_scheduler = Scheduler()
+
         agent = self._agent_cls(
-            round=round, client=hans_client, coro_scheduler=self._coro_scheduler
+            round=round,
+            client=hans_client,
+            coro_scheduler=coro_scheduler
         )
 
         self._agent = _AgentWrapper(agent, state)
-        self._game_loop = GameLoop(self._agent, **self._game_loop_kwargs)
+        self._game_loop = GameLoop(
+            self._agent,
+            coro_scheduler,
+            **self._game_loop_kwargs
+        )
 
         self._game_loop_started.set()
 

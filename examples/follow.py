@@ -5,13 +5,6 @@ from collections import deque
 import numpy as np
 from hans import HansPlatform, Agent, AgentManager
 
-from typing import TYPE_CHECKING
-
-from hans.state import StateSnapshot
-
-if TYPE_CHECKING:
-    from hans.state import StateSnapshot
-
 NAME = "Follow"
 
 HOST = "127.0.0.1"
@@ -29,8 +22,9 @@ class Follow(Agent):
         self.queue = deque()
         self.counter = 0
 
-    def update(self, snapshot: StateSnapshot, delta: float):
-        self.queue.append((snapshot.other_positions[self.follow_idx], self.counter))
+    def update(self, delta: float):
+        self.queue.append(
+            (self.snapshot.other_positions[self.follow_idx], self.counter))
 
         pos, timestamp = self.queue[0]
         timestamp += self.lag
@@ -49,7 +43,7 @@ def main():
         Follow,
         agent_kwargs=dict(
             lag=0.5,
-            follow_idx=0
+            follow_idx=1
         )
     )
 

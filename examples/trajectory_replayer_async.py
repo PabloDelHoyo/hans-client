@@ -21,7 +21,7 @@ MQTT_PORT = 9001
 # path for both constants
 
 FIRST_TRAJECTORY_PATH = "path/to/first.txt"
-SECOND_TRAJECTORY_PATH = "path/to/second.txt"
+SECOND_TRAJECTORY_PATH = "path/to/second/second.txt"
 
 
 def get_default_handler():
