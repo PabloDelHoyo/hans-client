@@ -5,12 +5,9 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from hans import HansPlatform, Loop, LoopThread
-import hans.trajectories
+from hans import HansPlatform, Agent, AgentManager
 from hans.trajectories import Trajectory, TrajectoryGenerator
 
-if TYPE_CHECKING:
-    from hans.state import StateSnapshot
 
 NAME = "Trajectory Replayer"
 
@@ -51,7 +48,8 @@ configure_logger(
 )
 
 
-class TrajectoryReplayer(Loop):
+class TrajectoryReplayer(Agent):
+
     def setup(
         self,
         first_trajectory: Trajectory,
@@ -87,7 +85,7 @@ class TrajectoryReplayer(Loop):
         self.counter = 0
         self.has_changed = False
 
-    def update(self, snapshot: StateSnapshot, delta: float):
+    def update(self, delta: float):
         if not self.has_changed and self.counter > self.change_after_seconds:
             self.point_generator.set_trajectory(
                 start=self.position,
@@ -108,9 +106,9 @@ def main():
     first_trajectory = Trajectory.from_file(FIRST_TRAJECTORY_PATH)
     second_trajectory = Trajectory.from_file(SECOND_TRAJECTORY_PATH)
 
-    trajectory_replayer_loop = LoopThread(
+    trajectory_replayer_loop = AgentManager(
         TrajectoryReplayer,
-        loop_kwargs=dict(
+        agent_kwargs=dict(
             first_trajectory=first_trajectory,
             second_trajectory=second_trajectory,
             duration=5,

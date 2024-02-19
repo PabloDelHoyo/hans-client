@@ -19,7 +19,7 @@ from .position_codec import PositionCodec
 
 if TYPE_CHECKING:
     from sys import ExcInfo
-    from .loop import LoopThread
+    from .loop import AgentManager
 
 TOPIC_BASE = "swarm/session/{session_id}"
 API_BASE = "http://{host}:{port}/api"
@@ -272,7 +272,7 @@ class HansPlatform:
     def __init__(
             self,
             client_name: str,
-            loop: LoopThread,
+            agent_manager: AgentManager,
             *,
             hexagon_radius: float = 340):
 
@@ -282,12 +282,12 @@ class HansPlatform:
 
         self._api_wrapper: Optional[_HansApiWrapper] = None
 
-        self._loop_thread = loop
+        self._agent_manager = agent_manager
 
         # This means that if there is an exception in the loop thread and, as consequence,
         # the thread ends, the client will be disconnected from the platform because there
         # is no way we can recover from that
-        self._loop_thread.add_exc_handler(lambda: self.disconnect())
+        self._agent_manager.add_exc_handler(lambda: self.disconnect())
 
         self._current_question: Optional[Question] = None
 
@@ -312,21 +312,21 @@ class HansPlatform:
         """Listen to incoming MQTT requests and start the game loop thread"""
 
         logger.info("Start listening for incoming MQTT packets")
-        self._loop_thread.start()
+        self._agent_manager.start()
         self._api_wrapper.mqttc.loop_forever(*args, **kwargs)
-        if self._loop_thread.exc_info is not None:
-            _raise_from_exc_info(self._loop_thread.exc_info)
+        if self._agent_manager.exc_info is not None:
+            _raise_from_exc_info(self._agent_manager.exc_info)
 
     def disconnect(self):
         if not self._connected:
             return
+        self._connected = False
 
         logger.info("Disconnecting from MQTT broker")
         self._api_wrapper.disconnect()
-        if self._loop_thread.is_alive():
-            self._loop_thread.quit()
+        if self._agent_manager.is_alive():
+            self._agent_manager.quit()
 
-        self._connected = False
 
     def _on_connect(self, client, userdata, flags, rc):
         mqttc = self._api_wrapper.mqttc
@@ -358,7 +358,7 @@ class HansPlatform:
             # Right now, update messsages are sent when the users are responding. If it were
             # not the case, we would have to keep track of the state in which the client is
             participant_id = int(msg.topic.split("/")[-1])
-            self._loop_thread.on_changed_position(
+            self._agent_manager.on_changed_position(
                 participant_id, payload["data"])
 
     def _handle_control_msgs(self, payload):
@@ -383,10 +383,11 @@ class HansPlatform:
             hans_client = HansClient(
                 self._api_wrapper, PositionCodec(answer_positions)
             )
-            self._loop_thread.new_loop(new_round, hans_client)
+
+            self._agent_manager.start_session(new_round, hans_client)
             logger.info("The round has started")
         elif payload["type"] == "stop":
-            self._loop_thread.stop()
+            self._agent_manager.finish_session()
             logger.info("The round has stopped")
 
     def _set_current_question(self, collection_id, question_id):
