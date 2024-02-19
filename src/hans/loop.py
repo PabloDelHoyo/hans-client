@@ -226,6 +226,64 @@ class GameLoop:
         self._loop.close()
 
 
+class GameLoopManager:
+    """This class is in charge of creating and stopping a game loop. It is useful
+    when you want to control a game loop from another thread"""
+
+    def __init__(self, loop_kwargs={}):
+        self._loop_kwargs = loop_kwargs
+
+        self._game_loop: GameLoop | None = None
+
+        self._manager_quit = threading.Event()
+        self._game_loop_started = threading.Event()
+
+        # Called when an exception happens
+        self._exc_handler: Optional[Callable[[None], None]] = None
+        # Stores the exception info in case one is reaised
+        self.exc_info: OptExcInfo = None
+
+    def set_game_loop(self, game_loop: Loop):
+        self._game_loop = game_loop
+
+        self._game_loop_started.set()
+
+    def stop(self):
+        self._game_loop_started.clear()
+        if self._game_loop is not None:
+            self._game_loop.quit()
+
+    def quit(self):
+        self._manager_quit.set()
+        if self._game_loop is not None:
+            self._game_loop.quit()
+        self._game_loop_started.set()
+
+    def run(self):
+        if self._manager_quit.is_set():
+            raise RuntimeError(
+                "You cannot call 'run()' after you have called 'quit()'"
+            )
+
+        try:
+            while not self._manager_quit.is_set():
+                self._game_loop_started.wait()
+                if self._manager_quit.is_set():
+                    break
+                self._game_loop.run(**self._loop_kwargs)
+        except Exception:
+            import sys
+
+            self.exc_info = sys.exc_info()
+            if self._exc_handler is not None:
+                self._exc_handler()
+
+    def add_exc_handler(self, exc_handler: Callable[[None], None]):
+        """Sets the handler that will be called when there is an exception in the loop"""
+
+        self._exc_handler = exc_handler
+
+
 class AgentManager(threading.Thread):
     """This class is in charge of running an agent when a session starts and stopping
     its execution when the session finishes."""
@@ -238,22 +296,14 @@ class AgentManager(threading.Thread):
     ):
         super().__init__()
 
+        self._manager = GameLoopManager(agent_kwargs)
+
         self._agent_cls = agent_cls
-        self._agent_kwargs = agent_kwargs
         self._game_loop_kwargs = game_loop_kwargs
 
         # All of these variables will be initialized when start_session is called
         # The agent which is being currently being executed
         self._agent: _AgentWrapper | None = None
-        self._game_loop: GameLoop | None = None
-
-        self._manager_quit = threading.Event()
-        self._game_loop_started = threading.Event()
-
-        # Called when an exception happens
-        self._exc_handler: Optional[Callable[[None], None]] = None
-        # Stores the exception info in case one is reaised
-        self.exc_info: OptExcInfo = None
 
     def start_session(self, round: Round, hans_client: HansClient):
         participant_ids = [
@@ -269,35 +319,19 @@ class AgentManager(threading.Thread):
         )
 
         self._agent = _AgentWrapper(agent, state)
-        self._game_loop = GameLoop(
+        game_loop = GameLoop(
             self._agent,
             coro_scheduler,
             **self._game_loop_kwargs
         )
 
-        self._game_loop_started.set()
+        self._manager.set_game_loop(game_loop)
 
     def run(self):
-        try:
-            while not self._manager_quit.is_set():
-                self._game_loop_started.wait()
-                if self._manager_quit.is_set():
-                    break
-                self._game_loop.run(**self._agent_kwargs)
-        except Exception:
-            import sys
-
-            self.exc_info = sys.exc_info()
-            if self._exc_handler is not None:
-                self._exc_handler()
+        self._manager.run()
 
     def quit(self):
-        """Exits the thread"""
-
-        self._manager_quit.set()
-        if self._game_loop is not None:
-            self._game_loop.quit()
-        self._game_loop_started.set()
+        self._manager.quit()
 
     def on_changed_position(self, participant_id: int, data):
         """Called every time a participant changes their position and a message is sent through
@@ -314,10 +348,9 @@ class AgentManager(threading.Thread):
     def finish_session(self):
         """Stops and removes the currently executing agent."""
 
-        self._game_loop_started.clear()
-        self._game_loop.quit()
+        self._manager.stop()
 
     def add_exc_handler(self, exc_handler: Callable[[None], None]):
         """Sets the handler that will be called when there is an exception in the loop"""
 
-        self._exc_handler = exc_handler
+        self._manager.add_exc_handler(exc_handler)
