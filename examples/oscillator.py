@@ -9,8 +9,9 @@ from hans import HansPlatform, Agent, AgentManager
 NAME = "Oscillator"
 
 HOST = "127.0.0.1"
-API_PORT = 3000
+API_HOST = f"http://{HOST}:8080"
 MQTT_PORT = 9001
+
 
 def configure_logger(level, formatter, handler=logging.StreamHandler()):
     handler.setFormatter(formatter)
@@ -19,12 +20,14 @@ def configure_logger(level, formatter, handler=logging.StreamHandler()):
     logger.setLevel(level)
     logger.addHandler(handler)
 
+
 # If you want to log info messages, write
 # logging.INFO
 configure_logger(
     logging.INFO,
     logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 )
+
 
 class Oscillator(Agent):
 
@@ -44,7 +47,8 @@ class Oscillator(Agent):
         self.radius += self.radius_speed * delta
         self.angle += self.angular_velocity * delta
 
-        position = self.radius * np.array([np.cos(self.angle), np.sin(self.angle)])
+        position = self.radius * \
+            np.array([np.cos(self.angle), np.sin(self.angle)])
 
         self.client.send_position(position)
 
@@ -60,7 +64,7 @@ def main():
     )
 
     with HansPlatform(NAME, oscillator_manager) as platform:
-        platform.connect(HOST, API_PORT, MQTT_PORT)
+        platform.connect(API_HOST, HOST, MQTT_PORT)
         platform.listen()
 
 
