@@ -111,18 +111,20 @@ class _HansApiWrapper:
         self._subscribe_topics = subscribe_topics
 
     @classmethod
-    def from_connection(cls,
-                        client_name: str,
-                        session_id: int,
-                        host: str,
-                        port: int):
+    def from_connection(
+        cls,
+        client_name: str,
+        session_id: int,
+        api_host: str,
+    ):
 
         mqttc = mqtt.Client(transport="websockets", clean_session=True)
         req_session = requests.Session()
 
         session_id = str(session_id)
         session_topic = TOPIC_BASE.format(session_id=session_id)
-        api_base = API_BASE.format(host=host, port=port)
+
+        api_base = api_host + "/api"
 
         req = _post(
             req_session,
@@ -291,14 +293,21 @@ class HansPlatform:
 
         self._current_question: Optional[Question] = None
 
-    def connect(self, host: str, port: int = 3000, broker_port: int = 9001, session_id: int = 1):
-        logger.info("Connecting to MQTT broker at %s:%s", host, broker_port)
+    def connect(
+        self,
+        api_host: str,
+        broker_host: str,
+        broker_port: int = 9001,
+        session_id: int = 1
+    ):
+        logger.info("Connecting to MQTT broker at %s:%s",
+                    broker_host, broker_port
+        )
 
         self._api_wrapper = _HansApiWrapper.from_connection(
             self.client_name,
             session_id,
-            host,
-            port
+            api_host
         )
         mqttc = self._api_wrapper.mqttc
 
@@ -306,7 +315,7 @@ class HansPlatform:
         mqttc.on_message = self._on_message
 
         self._connected = True
-        mqttc.connect(host, broker_port)
+        mqttc.connect(broker_host, broker_port)
 
     def listen(self, *args, **kwargs):
         """Listen to incoming MQTT requests and start the game loop thread"""
@@ -326,7 +335,6 @@ class HansPlatform:
         self._api_wrapper.disconnect()
         if self._agent_manager.is_alive():
             self._agent_manager.quit()
-
 
     def _on_connect(self, client, userdata, flags, rc):
         mqttc = self._api_wrapper.mqttc

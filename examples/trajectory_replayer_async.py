@@ -13,7 +13,7 @@ from hans.trajectories import Trajectory, TrajectoryGenerator
 NAME = "Trajectory Replayer Async"
 
 HOST = "127.0.0.1"
-API_PORT = 3000
+API_HOST = f"http://{HOST}:8080"
 MQTT_PORT = 9001
 
 # IMPORTANT: Generate two trajectories in the Hans platform and write
@@ -27,7 +27,8 @@ SECOND_TRAJECTORY_PATH = "path/to/second/second.txt"
 def get_default_handler():
     handler = logging.StreamHandler()
     handler.setFormatter(
-        logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+        logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     )
     return handler
 
@@ -116,7 +117,7 @@ def main():
 
     # The agent spends 16 seconds before it definitely stops. That duration is
     # independent from the time it took to record the trajectories
-    trajectory_replayer_loop = AgentManager(
+    trajectory_replayer_manager = AgentManager(
         TrajectoryReplayer,
         agent_kwargs=dict(
             first_trajectory=first_trajectory,
@@ -126,8 +127,8 @@ def main():
         ),
     )
 
-    with HansPlatform(NAME, trajectory_replayer_loop) as platform:
-        platform.connect(HOST)
+    with HansPlatform(NAME, trajectory_replayer_manager) as platform:
+        platform.connect(API_HOST, HOST, MQTT_PORT)
         platform.listen()
 
 

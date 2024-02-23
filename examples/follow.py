@@ -8,7 +8,7 @@ from hans import HansPlatform, Agent, AgentManager
 NAME = "Follow"
 
 HOST = "127.0.0.1"
-API_PORT = 3000
+API_HOST = f"http://{HOST}:8080"
 MQTT_PORT = 9001
 
 
@@ -48,7 +48,7 @@ def main():
     )
 
     with HansPlatform(NAME, follow_manager) as platform:
-        platform.connect(HOST, API_PORT, MQTT_PORT)
+        platform.connect(API_HOST, HOST, MQTT_PORT)
         platform.listen()
 
 

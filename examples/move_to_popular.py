@@ -10,7 +10,7 @@ from typing import Optional
 NAME = "MoveToPopular"
 
 HOST = "127.0.0.1"
-API_PORT = 3000
+API_HOST = f"http://{HOST}:8080"
 MQTT_PORT = 9001
 
 
@@ -24,7 +24,9 @@ class MoveToMostPopular(Agent):
         self.position = np.zeros(2)
 
     def update(self, delta: float):
-        popular_answer = self._get_popular_answer(self.snapshot.other_positions, 1)
+        popular_answer = self._get_popular_answer(
+            self.snapshot.other_positions, 1
+        )
         if popular_answer is None:
             return
 
@@ -71,7 +73,7 @@ class MoveToMostPopular(Agent):
 
 
 def main():
-    move_to_popular_thread = AgentManager(
+    move_to_popular_manager = AgentManager(
         MoveToMostPopular,
         agent_kwargs=dict(
             speed=150,
@@ -80,9 +82,10 @@ def main():
         )
     )
 
-    with HansPlatform(NAME, move_to_popular_thread) as platform:
-        platform.connect(HOST, API_PORT, MQTT_PORT)
+    with HansPlatform(NAME, move_to_popular_manager) as platform:
+        platform.connect(API_HOST, HOST, MQTT_PORT)
         platform.listen()
+
 
 if __name__ == "__main__":
     main()
