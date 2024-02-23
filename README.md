@@ -15,12 +15,12 @@ $ python3 -m pip install git+https://github.com/PabloDelHoyo/hans-client@dev
 ```
 
 ## Usage
-The structure of a client is very similar to the one followed by a game loop. All the logic which makes the agent move must be in a subclass of `Loop`. These are the most important methods that you can override, but that is not compulsory:
+The structure of a client is very similar to the one followed by a game loop. All the logic which makes the agent move must be in a subclass of `Agent`. These are the most important methods that you can override, but that is not compulsory:
 * `setup(arg1, arg2, ...)`. 
 
 This method is called every time a new round starts (when the participant start to answer by moving their square). It receives as many arguments as the creator of the subclass wants.
 
-* `fixed_update(snapshot: StateSnapshot, delta: float, sync_ration: float)`.
+* `fixed_update(delta: float, sync_ration: float)`.
 
 This method is called with a fixed `delta`. `delta` is the number of seconds which have passed since the last call to it. To avoid running into the "spiral of hell", the number
 of fixed updates per seconds is upper bounded. This will have the effect of slowing down the simulation but at least the frame time (number of seconds the render method is called) will stop increasing and increasing.
@@ -31,7 +31,7 @@ of fixed updates per seconds is upper bounded. This will have the effect of slow
 and updating might happen at different rates. For this particular application, it is
 not probably useful.
 
-* `update(snaphsot, StateSnapshot, delta: float)`
+* `update(delta: float)`
 
 This method is not guaranteed to be called at the same rate. That will depend on the work done in it. `sync_ratio` is a quantity associated to the way `update` and `render` are called at different rates. I cannot think of a reason to use it right now, so it can be safely ignored.
 
@@ -41,24 +41,25 @@ The main purpose of `render` is sending the position to the server.
 
 Called when a round finishes. It is guaranteed to be the last call
 
-Additionally, a subclass of `Loop` inherits two attributes:
+Additionally, a subclass of `Agent` inherits two attributes:
+* `snapshot`: It represents the state of a session. More concretely, it contains the position of each participant.
 * `round`: It contains all the useful information for a question
 * `client`: It allows you to send the position.
 
 The skeleton of a client (after doing the corresponding imports) is therefore the following one:
 ```python
-class AgentLogic(Loop):
+class AgentLogic(Agent):
 
     def setup(self, arg1, arg2, arg3):
         self.arg1 = arg1
         # ...
         self.position = np.zeros(2)
     
-    def fixed_update(self, snapshot: StateSnapshot, delta: float, sync_ratio: float):
+    def fixed_update(self, delta: float, sync_ratio: float):
         # calculations which require a fixed timestep to be reliable
         # update position using snapshot, self.round and delta
     
-    def update(self, snapshot: StateSnapshot, delta: float):
+    def update(self, delta: float):
         # this method will be tried to be called at fix rate but that is not guaranteed.
         # It can be used to send the position
         ...
@@ -69,19 +70,19 @@ class AgentLogic(Loop):
         # last of piece of code executed 
 ```
 
-NOTE: keep in mind that an instance of a `Loop` is destroyed when a round finishes and a fresh one will be created when a new question starts.
+NOTE: keep in mind that an instance of a `Agent` is destroyed when a round finishes and a fresh one will be created when a new question starts.
 
-For running it, you must first create the thread which will execute the logic contained in the subclass of `Loop` in the follwing manner
+For running it, you must first create the thread which will execute the logic contained in the subclass of `Agent` in the follwing manner
 
 ```python
-loop = LoopThread(AgentLogic, loop_kwargs={
+loop = AgentThread(AgentLogic, agent_kwargs={
     "arg1": "first argument",
     "arg2": "second argument",
     "arg3": "third argument"
 })
 ```
 
-Finally, pass the `LoopThread` to the `HansPlatform` so that it can handle it.
+Finally, pass the `AgentThread` to the `HansPlatform` so that it can handle it.
 
 ```python
 with HansPlatform("agent name", loop) as platform:
