@@ -19,7 +19,7 @@ from .position_codec import PositionCodec
 
 if TYPE_CHECKING:
     from sys import ExcInfo
-    from .loop import AgentManager
+    from .agent import AgentManager
 
 TOPIC_BASE = "swarm/session/{session_id}"
 API_BASE = "http://{host}:{port}/api"
@@ -272,11 +272,12 @@ class _HansApiWrapper:
 
 class HansPlatform:
     def __init__(
-            self,
-            client_name: str,
-            agent_manager: AgentManager,
-            *,
-            hexagon_radius: float = 340):
+        self,
+        client_name: str,
+        agent_manager: AgentManager,
+        *,
+        hexagon_radius: float = 340
+    ):
 
         self.client_name = client_name
         self._hexagon_radius = hexagon_radius
@@ -302,7 +303,7 @@ class HansPlatform:
     ):
         logger.info("Connecting to MQTT broker at %s:%s",
                     broker_host, broker_port
-        )
+                    )
 
         self._api_wrapper = _HansApiWrapper.from_connection(
             self.client_name,

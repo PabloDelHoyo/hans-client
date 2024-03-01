@@ -62,7 +62,7 @@ class Loop:
         will happen after this method is called"""
 
 
-class _LoopWithScheduler(Loop):
+class LoopWithScheduler(Loop):
 
     def __init__(self, coro_scheduler: Scheduler):
         self._coro_scheduler = coro_scheduler
@@ -71,7 +71,7 @@ class _LoopWithScheduler(Loop):
         self._coro_scheduler.add_task(WaitTask.from_sleep_time(coro, after))
 
 
-class Agent(_LoopWithScheduler):
+class Agent(LoopWithScheduler):
     """All the logic to control a client must be included in a subclass
     inheriting from this one. It is not necessary to override the constructor
     """
@@ -88,36 +88,6 @@ class Agent(_LoopWithScheduler):
         # possible if the calling code is working properly.
         # Think on some way of avoiding that inconvenient to the user.
         self.snapshot: StateSnapshot | None = None
-
-
-class _AgentWrapper(Loop):
-    """This is a wrapper for an Agent. It is necessary to get snapshots every time
-    update() or fixed_update() is called"""
-
-    def __init__(self, agent: Agent, state: State):
-        self._agent = agent
-        self.state = state
-
-    def start_coroutine(self, coro: LoopCoroutine, after: float = 0):
-        self._agent.start_coroutine(coro, after)
-
-    def setup(self, **kwargs):
-        self._agent.setup(**kwargs)
-
-    def update(self, delta: float):
-        # The time it takes get a snapshot is negible, so I don't think it is worth it
-        # to add it to delta
-        self._agent.snapshot = self.state.get_snapshot()
-        self._agent.update(delta)
-
-    def fixed_update(self, delta: float, sync_ratio: float):
-        # The time it takes get a snapshot is negible, so I don't think it is worth it
-        # to add it to delta
-        self._agent.snapshot = self.state.get_snapshot()
-        self._agent.fixed_update(delta, sync_ratio)
-
-    def close(self):
-        self._agent.close()
 
 
 class GameLoop:
@@ -206,24 +176,29 @@ class GameLoop:
                 # the scheduler decides
                 self._quit.wait(remaining_frame_time)
 
+        self._loop.close()
         self._completely_finished.set()
 
     def has_finished(self):
         return self._completely_finished.is_set()
 
+    # TODO: consdier making a method which just waits for the game loop to finish
     def quit(self, timeout: float | None = None):
         """Quits the game loop. If it is called several times, only the first call will
         call Loop.close(). Timeout is the maximum number of seconds to wait before this
         method returns. If it None, it does not return until the loop has completely finished"""
 
-        if self._quit.is_set():
-            return
+        self._quit.set()
+        # Wait until the game loop has completely finished
+        self._completely_finished.wait(timeout)
+
+    def signal_quit(self):
+        """Signals the game loop to finish. It does not wait until the loop completely finishes.
+        This is the method that should be used in case you are controlling the game loop
+        from the same thread where the loop is running. If 'quit()' were used instead, a deadlock would
+        happen"""
 
         self._quit.set()
-
-        # Wait until the game loop has finished has completely finished
-        self._completely_finished.wait(timeout)
-        self._loop.close()
 
 
 class GameLoopManager:
@@ -282,75 +257,3 @@ class GameLoopManager:
         """Sets the handler that will be called when there is an exception in the loop"""
 
         self._exc_handler = exc_handler
-
-
-class AgentManager(threading.Thread):
-    """This class is in charge of running an agent when a session starts and stopping
-    its execution when the session finishes."""
-
-    def __init__(
-        self,
-        agent_cls: type[Agent],
-        agent_kwargs={},
-        game_loop_kwargs={}
-    ):
-        super().__init__()
-
-        self._manager = GameLoopManager(agent_kwargs)
-
-        self._agent_cls = agent_cls
-        self._game_loop_kwargs = game_loop_kwargs
-
-        # All of these variables will be initialized when start_session is called
-        # The agent which is being currently being executed
-        self._agent: _AgentWrapper | None = None
-
-    def start_session(self, round: Round, hans_client: HansClient):
-        participant_ids = [
-            participant.id for participant in round.participants]
-        state = State(hans_client.pcodec, participant_ids, hans_client.id)
-
-        coro_scheduler = Scheduler()
-
-        agent = self._agent_cls(
-            round=round,
-            client=hans_client,
-            coro_scheduler=coro_scheduler
-        )
-
-        self._agent = _AgentWrapper(agent, state)
-        game_loop = GameLoop(
-            self._agent,
-            coro_scheduler,
-            **self._game_loop_kwargs
-        )
-
-        self._manager.set_game_loop(game_loop)
-
-    def run(self):
-        self._manager.run()
-
-    def quit(self):
-        self._manager.quit()
-
-    def on_changed_position(self, participant_id: int, data):
-        """Called every time a participant changes their position and a message is sent through
-        the appropiate topic"""
-
-        # the backend is the one who publishes events to the topic under the 0 id. Right
-        # now, its update messages can be safely ignored for
-        if participant_id == 0:
-            return
-
-        position = np.array(data["position"])
-        self._agent.state.update(participant_id, position)
-
-    def finish_session(self):
-        """Stops and removes the currently executing agent."""
-
-        self._manager.stop()
-
-    def add_exc_handler(self, exc_handler: Callable[[None], None]):
-        """Sets the handler that will be called when there is an exception in the loop"""
-
-        self._manager.add_exc_handler(exc_handler)
