@@ -47,17 +47,9 @@ class RouterSocket:
 # the data attribute which appears here is an attribute of the serialized JSON object.
 
 @dataclass
-class IndividualMessage:
+class SendMessage:
     agent_name: str
     data: str
-
-
-@dataclass
-class BroadcastMessage:
-    data: str
-
-
-SendMessage = IndividualMessage | BroadcastMessage
 
 
 class _SendMessageBuffer:
@@ -67,13 +59,10 @@ class _SendMessageBuffer:
 
     def send_msg(self, agent_names: str | Iterable[str], data: str):
         if isinstance(agent_names, str):
-            self._queue.append(IndividualMessage(agent_names, data))
+            self._queue.append(SendMessage(agent_names, data))
         else:
-            self._queue += [IndividualMessage(agent_name, data)
+            self._queue += [SendMessage(agent_name, data)
                             for agent_name in agent_names]
-
-    def broadcast(self, data: str):
-        self._queue.append(BroadcastMessage(data))
 
     def clear(self):
         self._queue = []
@@ -97,7 +86,7 @@ class Leader(LoopWithScheduler):
         self.agent_names = agents_names
         # TODO: the len of this vector must be equal to the number of participants in the session (info
         # which is obtained from round)
-        self.positions = np.array([])
+        self.positions = np.zeros(4)
         self._send_buffer = send_buffer
 
     def on_message_received(self, agent_name: str, data: str):
@@ -119,7 +108,7 @@ class Leader(LoopWithScheduler):
         Send a message with payload 'data' to all connected agents
         """
 
-        self._send_buffer.broadcast(data)
+        self._send_buffer.send_msg(self.agent_names, data)
 
 
 @dataclass
@@ -177,21 +166,12 @@ class _LeaderWrapper(Loop):
         self._comm_messages = []
 
         for msg in self._send_buffer:
-            match msg:
-                case IndividualMessage(agent_name, data):
-                    self._socket.send_json(
-                        self._ident_name.get_ident(agent_name), {
-                            "type": "agent_communication",
-                            "data": data
-                        }
-                    )
-                case BroadcastMessage(data):
-                    for ident in self._ident_name.idents():
-                        self._socket.send_json(ident, {
-                            "type": "agent_communication",
-                            "data": data
-                        })
-
+            self._socket.send_json(
+                self._ident_name.get_ident(msg.agent_name), {
+                    "type": "agent_communication",
+                    "data": msg.data
+                }
+            )
         self._send_buffer.clear()
 
     def close(self):
@@ -282,7 +262,7 @@ class IdentNameMap:
         return self._ident_to_name[ident]
 
     def get_ident(self, name: str) -> bytes:
-        return self._ident_to_name[name]
+        return self._name_to_ident[name]
 
     def has_name(self, name: str) -> bool:
         return name in self._name_to_ident
