@@ -229,19 +229,6 @@ class _LeaderWrapper(Loop):
             except zmq.Again:
                 return messages
 
-
-# TODO: The following should probably be in another module
-# class FollowerAgent(LoopWithScheduler):
-
-#     def on_message_received(self, data: str):
-#         pass
-
-#     def send_msg(self, data: str):
-#         pass
-
-# class FollowerAgentManager:
-#     pass
-
 class IdentNameMap:
 
     def __init__(self):
@@ -278,22 +265,17 @@ class LeaderManager:
         leader_cls: type[Leader],
         leader_kwargs={},
         game_loop_kwargs={},
-        zmq_listen_addr: str = "ipc:///tmp/hansleader.ipc",
         zmq_context: zmq.Context | None = None
     ):
         """
-        zmq_listen_addr: 
-            a zmq endpoint. By default, an endpoint with transport 'ipc' will be bound
         zmq_context:
             the zmq context from which the leader socket will be created. If the value is 'None'
             then a new context will be created. The ZMQ documentation states that there must
             be one context per process
         """
         zmq_context = zmq_context if zmq_context is not None else zmq.Context()
-        self.zmq_listen_addr = zmq_listen_addr
 
         self._socket = RouterSocket(zmq_context)
-        self._socket.bind(zmq_listen_addr)
 
         self._leader_cls = leader_cls
         self._leader_kwargs = leader_kwargs
@@ -301,9 +283,10 @@ class LeaderManager:
 
         self._ident_name = IdentNameMap()
 
-    def bind(self, addr: str):
-        """Set the address where the leader will listen for commands"""
-        self._socket.bind(addr)
+    def bind(self, zmq_listen_addr: str="ipc:///tmp/hansleader.ipc"):
+        """Set the address where the leader will listen for commands. It is a zqm endpoint.
+        By default, an endpoint with transport 'ipc' will be bound"""
+        self._socket.bind(zmq_listen_addr)
 
     def start(self):
         while True:
