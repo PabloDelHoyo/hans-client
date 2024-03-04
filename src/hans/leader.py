@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Iterable, Callable, TYPE_CHECKING
+from typing import Any, Iterable, Callable, cast, TYPE_CHECKING
 from dataclasses import dataclass, field
 import json
 import logging
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class RouterSocket:
 
     def __init__(self, context: zmq.Context):
-        self._socket = context.socket(zmq.ROUTER)
+        self._socket = cast(zmq.Socket, context.socket(zmq.ROUTER))
 
     def bind(self, addr: str):
         """Set the address where the leader will listen for commands"""
