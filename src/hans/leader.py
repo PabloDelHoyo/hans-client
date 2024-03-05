@@ -182,8 +182,8 @@ class _LeaderWrapper(Loop):
             self.on_session_finish()
 
         if last_messages.state is not None:
-            self._leader.positions = np.array(
-                last_messages.state.data["positions"])
+            self._leader.positions = list(
+                map(np.array, last_messages.state.data))
 
         self._comm_messages += last_messages.agent_communication
 
@@ -229,6 +229,7 @@ class _LeaderWrapper(Loop):
             except zmq.Again:
                 return messages
 
+
 class IdentNameMap:
 
     def __init__(self):
@@ -238,6 +239,9 @@ class IdentNameMap:
     def add(self, ident: bytes, name: str):
         self._name_to_ident[name] = ident
         self._ident_to_name[ident] = name
+
+    def __len__(self):
+        return len(self._name_to_ident)
 
     def names(self) -> list[str]:
         return list(self._name_to_ident.keys())
@@ -283,7 +287,7 @@ class LeaderManager:
 
         self._ident_name = IdentNameMap()
 
-    def bind(self, zmq_listen_addr: str="ipc:///tmp/hansleader.ipc"):
+    def bind(self, zmq_listen_addr: str = "ipc:///tmp/hansleader.ipc"):
         """Set the address where the leader will listen for commands. It is a zqm endpoint.
         By default, an endpoint with transport 'ipc' will be bound"""
         self._socket.bind(zmq_listen_addr)
@@ -310,12 +314,15 @@ class LeaderManager:
                     })
                 else:
                     logger.info("The agent '%s' has joined", name)
+                    # Right now, the first agent which connects will be designated one
                     self._socket.send_json(ident, {
                         "type": "success",
-                        "data": None
+                        "data": {
+                            "is_designated": len(self._ident_name) == 0
+                        }
                     })
                     self._ident_name.add(ident, name)
-            elif msg["type"] == "start":
+            elif msg["type"] == "control" and msg["data"] == "start":
                 # TODO: Retrieve the static information of a session (i.e the round) only
                 # from the designated agent. If that data is received from another agent
                 # which is not the designated one, return an error

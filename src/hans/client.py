@@ -19,7 +19,7 @@ from .position_codec import PositionCodec
 
 if TYPE_CHECKING:
     from sys import ExcInfo
-    from .agent import AgentManager
+    from .thread_loop_manager import ThreadLoopManager
 
 TOPIC_BASE = "swarm/session/{session_id}"
 API_BASE = "http://{host}:{port}/api"
@@ -89,18 +89,23 @@ class HansClient:
     def id(self):
         return self._api_wrapper.client_id
 
+    def name(self):
+        return self._api_wrapper._client_name
+
 
 class _HansApiWrapper:
 
     def __init__(
-            self,
-            req_session: requests.Session,
-            mqttc: mqtt.Client,
-            session_id: int,
-            api_base: str,
-            client_id: str,
-            publish_topics: dict[str, str],
-            subscribe_topics: list[str]):
+        self,
+        req_session: requests.Session,
+        mqttc: mqtt.Client,
+        session_id: int,
+        api_base: str,
+        client_id: str,
+        publish_topics: dict[str, str],
+        subscribe_topics: list[str],
+        client_name: str
+    ):
 
         self._req_session = req_session
         self._mqttc = mqttc
@@ -109,6 +114,7 @@ class _HansApiWrapper:
         self._client_id = client_id
         self._publish_topics = publish_topics
         self._subscribe_topics = subscribe_topics
+        self._client_name = client_name
 
     @classmethod
     def from_connection(
@@ -168,7 +174,8 @@ class _HansApiWrapper:
             api_base=api_base,
             client_id=client_id,
             publish_topics=publish_topics,
-            subscribe_topics=subscribe_topics
+            subscribe_topics=subscribe_topics,
+            client_name=client_name
         )
 
     def set_offline(self):
@@ -269,12 +276,16 @@ class _HansApiWrapper:
     def subscribe_topics(self) -> list[str]:
         return self._subscribe_topics
 
+    @property
+    def client_name(self) -> str:
+        return self._client_name
+
 
 class HansPlatform:
     def __init__(
         self,
         client_name: str,
-        agent_manager: AgentManager,
+        agent_manager: ThreadLoopManager,
         *,
         hexagon_radius: float = 340
     ):
@@ -369,10 +380,11 @@ class HansPlatform:
 
             # the backend is the one who publishes events to the topic under the 0 id. Right
             # now, its update messages can be safely ignored for
+
             if participant_id == 0:
                 return
 
-            self._agent_manager.on_changed_position(
+            self._agent_manager.on_position_change(
                 participant_id, np.array(payload["data"]["position"])
             )
 
