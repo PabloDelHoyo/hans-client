@@ -287,11 +287,6 @@ class HansPlatform:
 
         self._agent_manager = agent_manager
 
-        # This means that if there is an exception in the loop thread and, as consequence,
-        # the thread ends, the client will be disconnected from the platform because there
-        # is no way we can recover from that
-        self._agent_manager.add_exc_handler(lambda: self.disconnect())
-
         self._current_question: Optional[Question] = None
 
     def connect(
@@ -322,7 +317,11 @@ class HansPlatform:
         """Listen to incoming MQTT requests and start the game loop thread"""
 
         logger.info("Start listening for incoming MQTT packets")
-        self._agent_manager.start_thread(self.client_name)
+
+        # If there is an error inside the thread, the client will disconnect from the
+        # platform
+        self._agent_manager.start_thread(
+            self.client_name, lambda: self.disconnect())
         self._api_wrapper.mqttc.loop_forever(*args, **kwargs)
         if self._agent_manager.exc_info is not None:
             _raise_from_exc_info(self._agent_manager.exc_info)

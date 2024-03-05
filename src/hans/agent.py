@@ -7,6 +7,7 @@ from typing import Callable, TYPE_CHECKING
 from .loop import Loop, GameLoop, GameLoopManager, LoopWithScheduler
 from .state import State
 from .coro import Scheduler
+from .thread_loop_manager import ThreadLoopManager
 
 if TYPE_CHECKING:
     from .client import HansClient
@@ -60,7 +61,7 @@ class _AgentWrapper(Loop):
         self._agent.close()
 
 
-class AgentManager:
+class AgentManager(ThreadLoopManager):
     """This class is in charge of running an agent when a session starts and stopping
     its execution when the session finishes."""
 
@@ -105,7 +106,8 @@ class AgentManager:
 
         self._manager.set_game_loop(game_loop)
 
-    def start_thread(self, agent_name: str):
+    def start_thread(self, agent_name: str, exc_handler: Callable[[None], None] | None = None):
+        self._manager.add_exc_handler(exc_handler)
         self._thread = threading.Thread(target=self._run)
         self._thread.start()
 
@@ -131,11 +133,6 @@ class AgentManager:
         """Stops and removes the currently executing agent."""
 
         self._manager.stop()
-
-    def add_exc_handler(self, exc_handler: Callable[[None], None]):
-        """Sets the handler that will be called when there is an exception in the loop"""
-
-        self._manager.add_exc_handler(exc_handler)
 
     def is_thread_alive(self):
         return self._thread is not None and self._thread.is_alive()
