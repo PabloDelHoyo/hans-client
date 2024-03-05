@@ -19,7 +19,7 @@ from .position_codec import PositionCodec
 
 if TYPE_CHECKING:
     from sys import ExcInfo
-    from .loop import AgentManager
+    from .thread_loop_manager import ThreadLoopManager
 
 TOPIC_BASE = "swarm/session/{session_id}"
 API_BASE = "http://{host}:{port}/api"
@@ -89,18 +89,23 @@ class HansClient:
     def id(self):
         return self._api_wrapper.client_id
 
+    def name(self):
+        return self._api_wrapper._client_name
+
 
 class _HansApiWrapper:
 
     def __init__(
-            self,
-            req_session: requests.Session,
-            mqttc: mqtt.Client,
-            session_id: int,
-            api_base: str,
-            client_id: str,
-            publish_topics: dict[str, str],
-            subscribe_topics: list[str]):
+        self,
+        req_session: requests.Session,
+        mqttc: mqtt.Client,
+        session_id: int,
+        api_base: str,
+        client_id: str,
+        publish_topics: dict[str, str],
+        subscribe_topics: list[str],
+        client_name: str
+    ):
 
         self._req_session = req_session
         self._mqttc = mqttc
@@ -109,6 +114,7 @@ class _HansApiWrapper:
         self._client_id = client_id
         self._publish_topics = publish_topics
         self._subscribe_topics = subscribe_topics
+        self._client_name = client_name
 
     @classmethod
     def from_connection(
@@ -168,7 +174,8 @@ class _HansApiWrapper:
             api_base=api_base,
             client_id=client_id,
             publish_topics=publish_topics,
-            subscribe_topics=subscribe_topics
+            subscribe_topics=subscribe_topics,
+            client_name=client_name
         )
 
     def set_offline(self):
@@ -269,14 +276,19 @@ class _HansApiWrapper:
     def subscribe_topics(self) -> list[str]:
         return self._subscribe_topics
 
+    @property
+    def client_name(self) -> str:
+        return self._client_name
+
 
 class HansPlatform:
     def __init__(
-            self,
-            client_name: str,
-            agent_manager: AgentManager,
-            *,
-            hexagon_radius: float = 340):
+        self,
+        client_name: str,
+        agent_manager: ThreadLoopManager,
+        *,
+        hexagon_radius: float = 340
+    ):
 
         self.client_name = client_name
         self._hexagon_radius = hexagon_radius
@@ -285,11 +297,6 @@ class HansPlatform:
         self._api_wrapper: Optional[_HansApiWrapper] = None
 
         self._agent_manager = agent_manager
-
-        # This means that if there is an exception in the loop thread and, as consequence,
-        # the thread ends, the client will be disconnected from the platform because there
-        # is no way we can recover from that
-        self._agent_manager.add_exc_handler(lambda: self.disconnect())
 
         self._current_question: Optional[Question] = None
 
@@ -302,7 +309,7 @@ class HansPlatform:
     ):
         logger.info("Connecting to MQTT broker at %s:%s",
                     broker_host, broker_port
-        )
+                    )
 
         self._api_wrapper = _HansApiWrapper.from_connection(
             self.client_name,
@@ -321,7 +328,11 @@ class HansPlatform:
         """Listen to incoming MQTT requests and start the game loop thread"""
 
         logger.info("Start listening for incoming MQTT packets")
-        self._agent_manager.start()
+
+        # If there is an error inside the thread, the client will disconnect from the
+        # platform
+        self._agent_manager.start_thread(
+            self.client_name, lambda: self.disconnect())
         self._api_wrapper.mqttc.loop_forever(*args, **kwargs)
         if self._agent_manager.exc_info is not None:
             _raise_from_exc_info(self._agent_manager.exc_info)
@@ -333,7 +344,7 @@ class HansPlatform:
 
         logger.info("Disconnecting from MQTT broker")
         self._api_wrapper.disconnect()
-        if self._agent_manager.is_alive():
+        if self._agent_manager.is_thread_alive():
             self._agent_manager.quit()
 
     def _on_connect(self, client, userdata, flags, rc):
@@ -366,8 +377,16 @@ class HansPlatform:
             # Right now, update messsages are sent when the users are responding. If it were
             # not the case, we would have to keep track of the state in which the client is
             participant_id = int(msg.topic.split("/")[-1])
-            self._agent_manager.on_changed_position(
-                participant_id, payload["data"])
+
+            # the backend is the one who publishes events to the topic under the 0 id. Right
+            # now, its update messages can be safely ignored for
+
+            if participant_id == 0:
+                return
+
+            self._agent_manager.on_position_change(
+                participant_id, np.array(payload["data"]["position"])
+            )
 
     def _handle_control_msgs(self, payload):
         if payload["type"] == "setup":
