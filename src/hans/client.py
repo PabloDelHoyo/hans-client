@@ -322,7 +322,7 @@ class HansPlatform:
         """Listen to incoming MQTT requests and start the game loop thread"""
 
         logger.info("Start listening for incoming MQTT packets")
-        self._agent_manager.start()
+        self._agent_manager.start_thread(self.client_name)
         self._api_wrapper.mqttc.loop_forever(*args, **kwargs)
         if self._agent_manager.exc_info is not None:
             _raise_from_exc_info(self._agent_manager.exc_info)
@@ -334,7 +334,7 @@ class HansPlatform:
 
         logger.info("Disconnecting from MQTT broker")
         self._api_wrapper.disconnect()
-        if self._agent_manager.is_alive():
+        if self._agent_manager.is_thread_alive():
             self._agent_manager.quit()
 
     def _on_connect(self, client, userdata, flags, rc):

@@ -60,7 +60,7 @@ class _AgentWrapper(Loop):
         self._agent.close()
 
 
-class AgentManager(threading.Thread):
+class AgentManager:
     """This class is in charge of running an agent when a session starts and stopping
     its execution when the session finishes."""
 
@@ -76,6 +76,8 @@ class AgentManager(threading.Thread):
 
         self._agent_cls = agent_cls
         self._game_loop_kwargs = game_loop_kwargs
+
+        self._thread: threading.Thread | None = None
 
         # All of these variables will be initialized when start_session is called
         # The agent which is being currently being executed
@@ -103,7 +105,11 @@ class AgentManager(threading.Thread):
 
         self._manager.set_game_loop(game_loop)
 
-    def run(self):
+    def start_thread(self, agent_name: str):
+        self._thread = threading.Thread(target=self._run)
+        self._thread.start()
+
+    def _run(self):
         self._manager.run()
 
     def quit(self):
@@ -130,6 +136,9 @@ class AgentManager(threading.Thread):
         """Sets the handler that will be called when there is an exception in the loop"""
 
         self._manager.add_exc_handler(exc_handler)
+
+    def is_thread_alive(self):
+        return self._thread is not None and self._thread.is_alive()
 
     @property
     def exc_info(self):
