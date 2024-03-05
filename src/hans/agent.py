@@ -117,16 +117,10 @@ class AgentManager(ThreadLoopManager):
     def quit(self):
         self._manager.quit()
 
-    def on_changed_position(self, participant_id: int, data):
+    def on_changed_position(self, participant_id: int, position: np.ndarray):
         """Called every time a participant changes their position and a message is sent through
         the appropiate topic"""
 
-        # the backend is the one who publishes events to the topic under the 0 id. Right
-        # now, its update messages can be safely ignored for
-        if participant_id == 0:
-            return
-
-        position = np.array(data["position"])
         self._agent.state.update(participant_id, position)
 
     def finish_session(self):

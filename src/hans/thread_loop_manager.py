@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Callable, TYPE_CHECKING
 
 if TYPE_CHECKING:
+    import numpy as np
     from .model import Round
     from .client import HansClient
 
@@ -14,13 +15,18 @@ class ThreadLoopManager:
         """Called when a session starts"""
 
     def start_thread(
-        self, agent_name: str,
+        self,
+        agent_name: str,
         exc_handler: Callable[[None], None] | None = None
     ):
         """Starts the thread where the loop will be executed
             - agent_name: The name that will be shown in admin view in the web app
             - exc_handler: called when an exception is raised inside the loop
         """
+    
+    def on_position_change(self, participant_id: int, position: np.ndarray):
+        """Called every time a participant changes their position and 
+        a message is sent through the appropiate topic"""
 
     def quit(self):
         """Stops the game loop"""
