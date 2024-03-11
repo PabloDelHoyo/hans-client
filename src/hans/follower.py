@@ -167,8 +167,8 @@ class FollowerManager(ThreadLoopManager):
             )
 
         self._socket.designated_send_json({
-            "type": "control",
-            "data": "start"
+            "type": "start",
+            "data": round.to_json()
         })
 
         participant_ids = [

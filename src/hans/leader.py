@@ -8,12 +8,10 @@ import logging
 import zmq
 import numpy as np
 
-from hans.coro import LoopCoroutine, Scheduler
+from hans.coro import Scheduler
 
 from .loop import Loop, GameLoop, LoopWithScheduler
-
-if TYPE_CHECKING:
-    from .loop import Round
+from .model import Round
 
 JSONDict = dict[str, Any]
 logger = logging.getLogger(__name__)
@@ -84,9 +82,7 @@ class Leader(LoopWithScheduler):
 
         self.round = round
         self.agent_names = agents_names
-        # TODO: the len of this vector must be equal to the number of participants in the session (info
-        # which is obtained from round)
-        self.positions = np.zeros(4)
+        self.positions = np.zeros(len(self.round.participants))
         self._send_buffer = send_buffer
 
     def on_message_received(self, agent_name: str, data: str):
@@ -322,11 +318,11 @@ class LeaderManager:
                         }
                     })
                     self._ident_name.add(ident, name)
-            elif msg["type"] == "control" and msg["data"] == "start":
+            elif msg["type"] == "start":
                 # TODO: Retrieve the static information of a session (i.e the round) only
                 # from the designated agent. If that data is received from another agent
                 # which is not the designated one, return an error
-                break
+                return Round.from_json(msg["data"])
             else:
                 self._socket.send_json(ident, {
                     "type": "error",

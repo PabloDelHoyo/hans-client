@@ -12,10 +12,10 @@ description = "A python client which interacts with the HANS platform"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "requests",
-    "numpy",
-    "paho-mqtt",
-    "Pillow"
+  "requests",
+  "numpy",
+  "paho-mqtt",
+  "Pillow"
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
