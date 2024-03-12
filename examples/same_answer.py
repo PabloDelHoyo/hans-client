@@ -34,7 +34,9 @@ def choose_random_trajectory_gen(path):
 class SameAnswerLeader(Leader):
 
     def setup(self, min_change, max_change):
-        wait_time = random.uniform(min_change, max_change)
+        # If the wait time is negative, send the message now
+        wait_time = max(0, self.round.duration -
+                        random.uniform(min_change, max_change))
         target_answer = random.randrange(0, len(self.round.answer_positions))
         self.start_coroutine(self.send_change(target_answer), wait_time)
 
@@ -46,20 +48,18 @@ class SameAnswerLeader(Leader):
 
 class SameAnswerFollower(Follower):
 
-    def setup(self, choose_random_trajectory):
+    def setup(self, choose_random_trajectory, min_consensus_duration):
         self.position = np.zeros(2)
+
+        # The minimum time the trajectory towards the received option is going to take
+        # If the remaining time is less than this quantity, the agent will ignore the message from
+        # the leader
+        self.min_consensus_duration = min_consensus_duration
         self.point_generator = TrajectoryGenerator(
             self.round.radius,
             self.round.answer_positions
         )
         self.choose_random_trajectory = choose_random_trajectory
-
-        self.point_generator.set_trajectory(
-            start=self.position,
-            end=self.round.answer_positions[self.random_answer()],
-            trajectory=self.choose_random_trajectory(),
-            duration=random.uniform(3.5, 7)
-        )
 
         # Time the agent is stopped at an answer
         self.rest_time = random.uniform(1, 2.5)
@@ -67,6 +67,8 @@ class SameAnswerFollower(Follower):
 
         self.change_trajectory_time = 0
         self.global_time = 0
+
+        self.reset_trajectory(self.random_answer(), random.uniform(3.5, 5))
 
     def update(self, delta: float):
         if self.is_random_mode:
@@ -78,26 +80,30 @@ class SameAnswerFollower(Follower):
 
     def run_random_mode(self, delta: float):
         if self.change_trajectory_time >= self.point_generator.replayer_duration() + self.rest_time:
-            self.reset_trajectory(self.random_answer())
+            self.reset_trajectory(self.random_answer(), random.uniform(3.5, 5))
             self.rest_time = random.uniform(1, 2.5)
             self.change_trajectory_time = 0
 
         self.change_trajectory_time += delta
 
-    def reset_trajectory(self, target_answer, duration=None):
+    def reset_trajectory(self, target_answer, duration):
         self.point_generator.set_trajectory(
             start=self.position,
             end=self.round.answer_positions[target_answer],
             trajectory=self.choose_random_trajectory(),
-            duration=duration if duration else random.uniform(3.5, 7)
+            duration=duration
         )
 
     def on_message_receive(self, data: str):
         target_answer = int(data)
-        remaining_time = int(self.round.duration) - self.global_time
+        remaining_time = self.round.duration - self.global_time
+        max_duration = remaining_time - 0.5
 
-        # TODO: consider the case where the lower bound is greater than the upper bound
-        replayer_duration = random.uniform(3, remaining_time - 0.5)
+        if self.min_consensus_duration > max_duration:
+            return
+
+        replayer_duration = random.uniform(
+            self.min_consensus_duration, remaining_time - 0.5)
         self.reset_trajectory(target_answer, replayer_duration)
         self.is_random_mode = False
 
@@ -110,7 +116,8 @@ def start_follower(name: str):
         SameAnswerFollower,
         follower_kwargs=dict(
             choose_random_trajectory=choose_random_trajectory_gen(
-                "trajectories")
+                "trajectories"),
+            min_consensus_duration=3
         )
     )
 
@@ -150,7 +157,3 @@ if __name__ == "__main__":
 
     names = [f"Random walker {i}" for i in range(NUM_FOLLOWERS)]
     start_follower_processes(names)
-
-    # with HansPlatform("Random Walker", manager) as platform:
-    #     platform.connect(API_HOST, HOST, MQTT_PORT)
-    #     platform.listen()
