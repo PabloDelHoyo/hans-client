@@ -14,8 +14,9 @@ requires-python = ">=3.10"
 dependencies = [
   "requests",
   "numpy",
-  "paho-mqtt",
-  "Pillow"
+  "paho-mqtt<2.0",
+  "Pillow",
+  "pyzmq"
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

@@ -71,7 +71,8 @@ class Round:
         data = json.loads(data)
         return cls(
             question=Question.from_json(data["question"]),
-            duration=data["duration"],
+            # TODO: check why this is not an int
+            duration=int(data["duration"]),
             participants=[
                 Participant.from_json(participant_data) for participant_data in data["participants"]
             ],

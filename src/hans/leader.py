@@ -286,6 +286,7 @@ class LeaderManager:
     def bind(self, zmq_listen_addr: str = "ipc:///tmp/hansleader.ipc"):
         """Set the address where the leader will listen for commands. It is a zqm endpoint.
         By default, an endpoint with transport 'ipc' will be bound"""
+
         self._socket.bind(zmq_listen_addr)
 
     def start(self):

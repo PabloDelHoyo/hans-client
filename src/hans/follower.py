@@ -157,6 +157,8 @@ class FollowerManager(ThreadLoopManager):
         self._follower_cls = follower_cls
         self._game_loop_kwargs = game_loop_kwargs
 
+        self._is_connected_to_leader = False
+
         self._manager = GameLoopManager(follower_kwargs)
         self._thread: threading.Thread | None = None
 
