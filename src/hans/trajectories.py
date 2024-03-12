@@ -8,7 +8,7 @@ import numpy as np
 from . import utils
 
 
-def lerp(v0: np.ndarray, v1: np.ndarray, t):
+def lerp(v0: np.ndarray, v1: np.ndarray, t: float):
     return (1 - t) * v0 + t * v1
 
 
@@ -170,7 +170,7 @@ class Replayer:
     def step(self, delta: float) -> np.ndarray:
         """Returns the appropiate point from the trajectory. Linear interpolation
         is applied to avoid stuttering movement in case the speed at which the trajectory
-        is replayed"""
+        is replayed is low"""
 
         while (
             not self.has_finished()

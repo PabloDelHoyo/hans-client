@@ -61,7 +61,7 @@ class Participant:
 @dataclass
 class Round:
     question: Question
-    duration: int
+    duration: float
     participants: list[Participant]
     answer_positions: np.ndarray  # Shape: (len(question.answers), 2)
     radius: float
