@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hans-client"
-version = "7.0.0"
+version = "7.1.0"
 authors = [
   { name="Pablo del Hoyo Abad", email="pablo.hoyo@alu.uclm.es" },
 ]
@@ -12,10 +12,11 @@ description = "A python client which interacts with the HANS platform"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "requests",
-    "numpy",
-    "paho-mqtt",
-    "Pillow"
+  "requests",
+  "numpy",
+  "paho-mqtt<2.0",
+  "Pillow",
+  "pyzmq"
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
