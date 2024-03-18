@@ -97,6 +97,7 @@ class Leader(LoopWithScheduler):
         Send a message with payload 'data' to the set of agents identified by 'agent_names'
         """
 
+        # TODO: ensure agent_names contains names of connected agents
         self._send_buffer.send_msg(agent_names, data)
 
     def broadcast(self, data: str):

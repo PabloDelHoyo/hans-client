@@ -75,17 +75,17 @@ NOTE: keep in mind that an instance of a `Agent` is destroyed when a round finis
 For running it, you must first create the thread which will execute the logic contained in the subclass of `Agent` in the follwing manner
 
 ```python
-loop = AgentThread(AgentLogic, agent_kwargs={
-    "arg1": "first argument",
-    "arg2": "second argument",
-    "arg3": "third argument"
-})
+agent_manager = AgentManager(AgentLogic, agent_kwargs=dict(
+    arg1="first argument",
+    arg2="second argument",
+    arg3="third argument"
+))
 ```
 
-Finally, pass the `AgentThread` to the `HansPlatform` so that it can handle it.
+Finally, pass the `AgentManager` to the `HansPlatform` so that it can handle it.
 
 ```python
-with HansPlatform("agent name", loop) as platform:
+with HansPlatform("agent name", agent_manager) as platform:
     platform.connect("host")
     platform.listen()
 ```
@@ -142,6 +142,77 @@ configure_logger(
 )
 ```
 In order to see everything you can do with the `logging`, I recommend you read the official documentation.
+
+## Communication between agents
+You may want to coordinate the actions taken by a group of agents. In that case, instead of
+implementing your own communication solution, you can use the one provided by `hans-client`.
+
+There exist two types of agents: `Follower` and `Leader`. A `Follower` agent has the same
+capabilities as a normal `Agent` but also includes methods to send and receive messages from the `Follower` agent. The `Follower` agent must be connected to a `Leader` before a session starts or an exception will be raised.
+
+On the other hand, the `Leader` is an agent capable of sending messages to all connected `Follower` agents. It has access to the same kind information about a session that a normal `Agent` or `Follower` does, including the position of other agents. However, the HANS platform is not aware of its existence so it will not appear in a session. The way a `Leader` knows the real time positions of all the agents in a session is by choosing a connected `Follower` (currently, the chosen one
+is the one which first connects) and make it responsible of notifying the most recent state of a session. That includes the agents positions but also the signalling of the moment when a session starts or stops.
+
+The message passing between a `Leader` and a set of `Follower`s is implemented using [PyZMQ](https://pyzmq.readthedocs.io/en/latest/), the Python bindings for [ZMQ](https://zguide.zeromq.org/docs/chapter1/). As a consequence, the `Leader` and the `Follower`s can be running on the same process but on different threads (not recommended), on different processes but on the same machine and on different processes on different machines. The setup you choose determines the ZMQ endpoint you connect to or bind. By default, it is assumed that each agent will be run in its own process so an IPC ZMQ endpoint is used.
+This will have the effect of creating the socket file `/tmp/hansleader.ipc`. If you want to create a second `Leader` on the same machine, you will have to specify another ZMQ endpoint. Otherwise, the two `Leader` will interfere in a very bad way. 
+
+In any case, you must start the `Leader` and then the `Follower`. Doing it in the other way will not fail because of the way ZMQ works but this situation has not been tested enough to ensure that both ways of starting the agents behaves in exactly the same way.
+
+### The Follower agent
+In order to create a `Follower` agent, you must create a subclass from `Follower`. A `Follower` contains the same methods and attributes as an `Agent` but it includes two more
+
+* `send_msg(msg: str)`: This method allows you to send a message to the Leader
+* `on_message_receive(self, data: str)`: Method that you must override. It will be called
+once for each message received from the leader.
+
+```python
+from hans.follower import FollowerManager, Follower
+
+class ExampleFollower(Follower):
+
+    def setup(self, arg):
+        self.arg = arg
+        # ...
+    
+    def update(self, delta: float):
+        self.send_msg("message")
+    
+    def on_message_receive(self, data: str):
+        pass
+```
+
+To create it, it is the same as the process followed with a normal `Agent`. The only
+difference is that you can specify settings specific to the communication.
+
+```python
+follower_manager = FollowerAgent(ExampleFollower, follower_kwargs=dict(
+    arg="an arg",
+    zmq_endpoint_addr="tcp://*:5555"
+))
+
+with HansPlatform("agent name", follower_manager) as platform:
+    platform.connect("host")
+    platform.listen()
+
+```
+
+### The Leader agent
+In order to create a `Leader` agent, you must create a subclass from `Leader`. A `Leader` contains the same methods and attributes as an `Agent` but it includes four more and modifies the name and type of another one.
+
+* `agent_names`: List of strings containing the names of all connected `Follower`s
+* `position`: This attribute replaces `snapshot` because `snapshot` assumes the agent has
+an id in the HANS platform, which is not the case for a `Leader` because the platform
+is not even aware of it. It is a list of np.ndarray.
+NOTE: in the future, `position` will be modified so that it is known the agent to which
+a position belongs to 
+* `send_msg(agent_names: str | Iterable[str], msg: str)`: Sends a message to the agents with names `names`. Names can be a string or a iterable of strings.
+* `broadcast(msg: str)`: Sends a message to all connected agents
+* `on_message_receive(self, agent_name: str, data: str)`: Method that you must override. It will be called
+once for each message received from a `Follower`.
+
+The example `examples/same_answer.py` shows the basic features of the communication solution implemented in `hans-client`. In that example, the sole purpose of the `Leader` is
+to send the answer where all the connected `Follower` must move towards. That message is sent when there are a predefined number of seconds left before the session finishes. Before
+that message is received, the `Follower`s move to random answers and, when they arrive at them, they randomly choose another one.
 
 ## Examples
 In the `examples/` directory, there are some examples which show different clients interacting with the platform in different ways. You can run each one of them as a standalone script but before doing that make sure that all server related settings (host, port, etc) are configured correctly.
