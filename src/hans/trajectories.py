@@ -54,21 +54,54 @@ class Trajectory:
     points: list[TrajectoryPoint]
     original_target: int
 
+    # TODO: The trajectory file format should be modified so that the target answer is inferred using
+    # the position of the last point
     @classmethod
     def from_file(cls, file_path: str) -> Trajectory:
+        """
+        file_path: path to the file which contains the trajectory
+        """
         with open(file_path) as f:
             original_target, trajectories_rows = f.read().strip().split("\n\n")
 
             original_target = int(original_target)
             trajectories_rows = trajectories_rows.split("\n")
 
+        points = [TrajectoryPoint.from_row(
+            trajectory_row) for trajectory_row in trajectories_rows]
+
         return cls(
-            [
-                TrajectoryPoint.from_row(trajectory_row)
-                for trajectory_row in trajectories_rows
-            ],
+            points,
             original_target,
         )
+
+    @classmethod
+    def from_closest_answer(
+        cls,
+        points: list[TrajectoryPoint],
+        num_answers: float,
+        max_dist: float = 0.13
+    ) -> Trajectory:
+        """ Returns a Trajectory composed by points whose original target is inferred by calculating the closest
+        answer to the last point. If none of the answers are at most 'max_dist' from the last point, a ValueError
+        is raised"""
+
+        if len(points) == 0:
+            raise ValueError("A trajectory must have at least one point")
+
+        last_point = points[-1]
+        answers = utils.calculate_answer_points(num_answers, 1)
+        distances = utils.distance_squared(answers, last_point.norm_position)
+        print(distances)
+        target = distances.argmin()
+        print(target)
+
+        if distances[target] > max_dist:
+            raise ValueError(
+                f"The last point is {distances[target]} from the closest answer but it must be at most {max_dist}"
+            )
+
+        return cls(points, target)
 
     def original_duration(self) -> float:
         """Return the time it took to record this trajectory. It is named this way in order
@@ -355,7 +388,8 @@ class TrajectoryGenerator:
         self._replayer = Replayer(trajectory, transform, time_multiplier)
 
         towards_origin_speed = (
-            origin_speed_multiplier * np.linalg.norm(start) / self._replayer.duration()
+            origin_speed_multiplier *
+            np.linalg.norm(start) / self._replayer.duration()
         )
 
         towards_target_speed = (

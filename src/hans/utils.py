@@ -17,7 +17,7 @@ def calculate_answer_points(num_answers: int, radius: float):
         radius * np.stack((np.cos(angles), np.sin(angles)), axis=1)
     )
 
-def distance_squared(v1: np.ndarray, v2: np.ndarray, axis: int = -1):
+def distance_squared(v1: np.ndarray, v2: np.ndarray, axis: int = -1) -> np.ndarray:
     return ((v1 - v2) ** 2).sum(axis=axis)
 
 
