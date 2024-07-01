@@ -24,7 +24,7 @@ class ThreadLoopManager:
             - exc_handler: called when an exception is raised inside the loop
         """
     
-    def on_position_change(self, participant_id: int, position: np.ndarray):
+    def on_position_change(self, participant_id: str, position: np.ndarray):
         """Called every time a participant changes their position and 
         a message is sent through the appropiate topic"""
 

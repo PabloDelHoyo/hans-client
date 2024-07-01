@@ -376,12 +376,12 @@ class HansPlatform:
         else:
             # Right now, update messsages are sent when the users are responding. If it were
             # not the case, we would have to keep track of the state in which the client is
-            participant_id = int(msg.topic.split("/")[-1])
+            participant_id = msg.topic.split("/")[-1]
 
             # the backend is the one who publishes events to the topic under the 0 id. Right
             # now, its update messages can be safely ignored for
 
-            if participant_id == 0:
+            if participant_id == "0":
                 return
 
             self._agent_manager.on_position_change(

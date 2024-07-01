@@ -117,7 +117,7 @@ class AgentManager(ThreadLoopManager):
     def quit(self):
         self._manager.quit()
 
-    def on_changed_position(self, participant_id: int, position: np.ndarray):
+    def on_changed_position(self, participant_id: str, position: np.ndarray):
         """Called every time a participant changes their position and a message is sent through
         the appropiate topic"""
 

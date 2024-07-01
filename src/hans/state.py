@@ -33,7 +33,7 @@ class State:
     game, we would poll the I/O system to get the latest network messages"""
 
     def __init__(
-        self, pcodec: PositionCodec, participant_ids: list[int], client_id: int
+        self, pcodec: PositionCodec, participant_ids: list[str], client_id: int
     ):
         self._client_id = client_id
         self._pcodec = pcodec

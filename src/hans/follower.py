@@ -223,7 +223,7 @@ class FollowerManager(ThreadLoopManager):
 
         self._manager.run()
 
-    def on_position_change(self, participant_id: int, position: ndarray):
+    def on_position_change(self, participant_id: str, position: ndarray):
         self._follower.state.update(participant_id, position)
 
     def quit(self):
